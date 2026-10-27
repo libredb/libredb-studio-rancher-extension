@@ -44,7 +44,12 @@ module.exports = {
     '/node_modules/(?!(@rancher/shell|color|color-string|color-convert|color-name|vee-validate|@vee-validate|clipboard-polyfill|intl-messageformat|@formatjs|@replit/codemirror-vim-core)/)',
   ],
 
-  testMatch: ['**/__tests__/**/*.test.ts'],
+  // Every spec of the package and of tests/unit, whatever its suffix, so a test file never sits
+  // there unrun.
+  testMatch: [
+    '<rootDir>/pkg/**/__tests__/**/*.{test,spec}.{ts,js}',
+    '<rootDir>/tests/unit/**/*.{test,spec}.{ts,js}',
+  ],
 
   coverageProvider:    'v8',
   coverageDirectory:   '<rootDir>/coverage/unit',
