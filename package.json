@@ -27,10 +27,12 @@
   "scripts": {
     "dev": "NODE_ENV=dev ./node_modules/.bin/vue-cli-service serve",
     "build": "./node_modules/.bin/vue-cli-service build",
-    "lint": "./node_modules/@rancher/shell/scripts/lint --ext .js,.ts,.vue .",
+    "lint": "./node_modules/@rancher/shell/scripts/lint --max-warnings 0 --ext .js,.ts,.vue .",
+    "typecheck": "tsc --noEmit -p pkg/libredb-studio/tsconfig.json",
     "clean": "./node_modules/@rancher/shell/scripts/clean",
     "test": "jest",
     "test:ci": "NODE_OPTIONS=--max_old_space_size=8192 jest --silent",
+    "test:coverage": "NODE_OPTIONS=--max_old_space_size=8192 jest --silent --coverage",
     "build-pkg": "./node_modules/@rancher/shell/scripts/build-pkg.sh",
     "serve-pkgs": "./node_modules/@rancher/shell/scripts/serve-pkgs",
     "publish-pkgs": "./node_modules/@rancher/shell/scripts/extension/publish",

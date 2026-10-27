@@ -35,9 +35,15 @@ export default [
     },
   },
 
-  // Add project-specific overrides below, e.g.:
-  // {
-  //   files: ['**/*.vue'],
-  //   rules: { 'vue/no-v-html': 'off' },
-  // },
+  // Project rules: the extension never logs (a log line can carry a resource or a secret into the
+  // browser console) and never evaluates code.
+  {
+    files: ['pkg/**/*.{js,ts,vue}'],
+    rules: {
+      'no-console':      'error',
+      'no-eval':         'error',
+      'no-implied-eval': 'error',
+      'no-new-func':     'error',
+    },
+  },
 ];

@@ -48,7 +48,17 @@ module.exports = {
 
   coverageProvider:    'v8',
   coverageDirectory:   '<rootDir>/coverage/unit',
-  coverageReporters:   ['json', 'text-summary', 'html'],
+  coverageReporters:   ['json', 'lcov', 'text', 'text-summary'],
   collectCoverage:     false,
-  collectCoverageFrom: ['<rootDir>/pkg/**/*.{vue,ts,js}'],
+  // Every source file of the package counts, loaded by a test or not, so an untested file shows
+  // up as 0% instead of disappearing from the report. Build configs and tests are not source.
+  collectCoverageFrom: [
+    '<rootDir>/pkg/libredb-studio/**/*.{vue,ts,js}',
+    '!<rootDir>/pkg/libredb-studio/**/__tests__/**',
+    '!<rootDir>/pkg/libredb-studio/**/*.d.ts',
+    '!<rootDir>/pkg/libredb-studio/{babel,vue}.config.js',
+    '!<rootDir>/pkg/libredb-studio/.shell/**',
+  ],
+  // The repository's rule: 100% line coverage of the extension package, enforced in CI.
+  coverageThreshold: { global: { lines: 100 } },
 };
