@@ -26,12 +26,25 @@ export default [
       'jest.config.js',
       'jest.setup.js',
     ],
+    ignores:         ['cypress/**'],
     plugins:         { jest: pluginJest },
     languageOptions: { globals: { ...globals.jest } },
     rules:           {
       ...pluginJest.configs['flat/recommended'].rules,
       'jest/no-commented-out-tests': 'off',
       'jest/no-disabled-tests':      'off',
+    },
+  },
+
+  // End-to-end specs run in Cypress, on mocha, not in Jest.
+  {
+    files:           ['cypress/**/*.ts', 'cypress.config.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.mocha,
+        cy:      'readonly',
+        Cypress: 'readonly',
+      },
     },
   },
 

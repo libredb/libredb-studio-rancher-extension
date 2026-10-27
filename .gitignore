@@ -76,3 +76,5 @@ dist-pkg
 cypress/screenshots/
 cypress/videos/
 cypress/downloads/
+cypress/reports/
+browser-logs/
