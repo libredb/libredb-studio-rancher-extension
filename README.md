@@ -19,7 +19,7 @@ Requirements: Node.js 24.15 or later (see `.nvmrc`) and Yarn 1.
 ```bash
 yarn install --frozen-lockfile
 yarn lint                       # ESLint through @rancher/shell's launcher, warnings fail
-yarn typecheck                  # tsc over pkg/libredb-studio
+yarn typecheck                  # vue-tsc over pkg/libredb-studio, .vue files included
 yarn test:coverage              # Jest, fails below 100% line coverage of pkg/libredb-studio
 yarn build-pkg libredb-studio   # builds dist-pkg/libredb-studio-<version>
 yarn serve-pkgs                 # serves dist-pkg on http://127.0.0.1:4500 for Developer Load

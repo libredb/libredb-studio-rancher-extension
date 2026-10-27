@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "@rancher/cypress": "1.0.12",
-    "@types/jest": "29.5.12",
+    "@types/jest": "30.0.0",
     "@types/lodash": "4.17.5",
     "@types/webpack-env": "1.18.8",
     "@vue/test-utils": "2.4.6",
@@ -18,9 +18,10 @@
     "babel-jest": "29.7.0",
     "babel-plugin-transform-require-context": "0.1.1",
     "cypress": "15.19.0",
-    "jest": "29.7.0",
-    "jest-environment-jsdom": "29.7.0",
-    "ts-jest": "29.4.12"
+    "jest": "30.5.2",
+    "jest-environment-jsdom": "30.5.2",
+    "ts-jest": "29.4.12",
+    "vue-tsc": "3.3.13"
   },
   "resolutions": {
     "@types/node": "~25.3.0",
@@ -31,7 +32,7 @@
     "dev": "NODE_ENV=dev ./node_modules/.bin/vue-cli-service serve",
     "build": "./node_modules/.bin/vue-cli-service build",
     "lint": "./node_modules/@rancher/shell/scripts/lint --max-warnings 0 --ext .js,.ts,.vue .",
-    "typecheck": "tsc --noEmit -p pkg/libredb-studio/tsconfig.json",
+    "typecheck": "vue-tsc --noEmit -p pkg/libredb-studio/tsconfig.json",
     "clean": "./node_modules/@rancher/shell/scripts/clean",
     "test": "jest",
     "test:ci": "NODE_OPTIONS=--max_old_space_size=8192 jest --silent",
