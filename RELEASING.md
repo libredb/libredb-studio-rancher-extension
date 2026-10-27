@@ -9,6 +9,8 @@ A release publishes the extension in two forms, each from a GitHub release:
 
 Both workflows call Rancher's reusable workflows at a pinned commit and run only when a release is published, or by hand.
 
+Before the first release, the `gh-pages` branch must exist on GitHub (an orphan branch with no files is enough); the publish script refuses to run without it.
+
 Steps:
 
 1. Bump the version in `pkg/libredb-studio/package.json` (and in `package.json` for a catalog image) in a pull request; versions follow semver and stay 0.x until the partner submission.
