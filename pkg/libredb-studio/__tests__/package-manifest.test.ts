@@ -40,6 +40,10 @@ describe('extension package manifest', () => {
     expect(rootPackageJson.license).toBe('MIT');
   });
 
+  it('points the chart home at this repository', () => {
+    expect(packageJson.homepage).toBe('https://github.com/libredb/libredb-studio-rancher-extension');
+  });
+
   it('pins @rancher/shell exactly', () => {
     expect(rootPackageJson.dependencies['@rancher/shell']).toMatch(/^\d+\.\d+\.\d+$/);
   });

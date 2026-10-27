@@ -34,7 +34,9 @@ jobs:
         run: yarn lint
 
       - name: Typecheck
-        run: yarn typecheck
+        run: |
+          yarn typecheck
+          yarn typecheck:e2e
 
       - name: Unit tests with the 100% line coverage gate
         run: yarn test:coverage

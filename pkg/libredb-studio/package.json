@@ -2,6 +2,14 @@
   "name": "libredb-studio",
   "description": "Open the databases of a Rancher cluster in LibreDB Studio",
   "version": "0.1.0",
+  "homepage": "https://github.com/libredb/libredb-studio-rancher-extension",
+  "keywords": [
+    "libredb",
+    "database",
+    "sql",
+    "postgresql",
+    "cloudnativepg"
+  ],
   "private": false,
   "rancher": {
     "annotations": {
