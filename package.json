@@ -1,12 +1,12 @@
 {
   "name": "libredb-studio-rancher-extension",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "engines": {
-    "node": ">=24"
+    "node": ">=24.15.0"
   },
   "dependencies": {
-    "@rancher/shell": "^3.0.14"
+    "@rancher/shell": "3.0.14"
   },
   "devDependencies": {
     "@types/jest": "29.5.12",
@@ -35,5 +35,7 @@
     "serve-pkgs": "./node_modules/@rancher/shell/scripts/serve-pkgs",
     "publish-pkgs": "./node_modules/@rancher/shell/scripts/extension/publish",
     "parse-tag-name": "./node_modules/@rancher/shell/scripts/extension/parse-tag-name"
-  }
+  },
+  "description": "Development app for the LibreDB Studio Rancher UI extension",
+  "license": "MIT"
 }

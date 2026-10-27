@@ -1,17 +1,20 @@
 {
   "name": "libredb-studio",
-  "description": "libredb-studio plugin",
+  "description": "Open the databases of a Rancher cluster in LibreDB Studio",
   "version": "0.1.0",
   "private": false,
   "rancher": {
     "annotations": {
-      "catalog.cattle.io/rancher-version": ">= 2.10.0",
-      "catalog.cattle.io/ui-extensions-version": ">= 3.0.0 < 4.0.0"
+      "catalog.cattle.io/display-name": "LibreDB Studio",
+      "catalog.cattle.io/rancher-version": ">= 2.15.0-0",
+      "catalog.cattle.io/ui-extensions-version": ">= 3.0.0 < 4.0.0",
+      "catalog.cattle.io/kube-version": ">= 1.26.0-0",
+      "catalog.cattle.io/ui-extensions-host": "rancher-manager"
     }
   },
   "scripts": {},
   "engines": {
-    "node": ">=24"
+    "node": ">=24.15.0"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "5.0.9",
@@ -22,5 +25,6 @@
     "> 1%",
     "last 2 versions",
     "not dead"
-  ]
+  ],
+  "license": "MIT"
 }
