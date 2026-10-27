@@ -48,7 +48,8 @@ jobs:
             -p 127.0.0.1:8443:443 \
             -e CATTLE_BOOTSTRAP_PASSWORD="$bootstrap" \
             "$RANCHER_IMAGE"
-          for _ in $(seq 1 120); do
+          # scripts/e2e/run.sh waits for the dashboard itself; this only fails fast on a dead server.
+          for _ in $(seq 1 60); do
             if curl -fsSk https://127.0.0.1:8443/ping >/dev/null 2>&1; then
               echo "Rancher answers /ping"
               exit 0

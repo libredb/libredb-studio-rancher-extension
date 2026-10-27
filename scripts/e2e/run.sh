@@ -33,6 +33,17 @@ export TEST_PASSWORD
 export TEST_SKIP="${TEST_SKIP-setup}"
 export TEST_ONLY="${TEST_ONLY:-extensions}"
 
+# Rancher answers /ping well before the dashboard stops answering 503, so wait for the dashboard.
+ready_timeout="${RANCHER_READY_TIMEOUT:-600}"
+deadline=$((SECONDS + ready_timeout))
+until [ "$(curl -sk -o /dev/null -w '%{http_code}' "${TEST_BASE_URL%/}/")" = "200" ]; do
+  if [ "$SECONDS" -ge "$deadline" ]; then
+    echo "Rancher's dashboard at $TEST_BASE_URL did not answer 200 within ${ready_timeout}s" >&2
+    exit 1
+  fi
+  sleep 5
+done
+
 PKG_PORT="${PKG_PORT:-4500}"
 export LIBREDB_PKG_URL="http://127.0.0.1:${PKG_PORT}"
 
@@ -41,7 +52,8 @@ if [ ! -f "dist-pkg/libredb-studio-${pkg_version}/libredb-studio-${pkg_version}.
   yarn build-pkg libredb-studio
 fi
 
-PORT="$PKG_PORT" yarn -s serve-pkgs >/dev/null &
+# The server runs directly under node, not through yarn, so the trap below stops the server itself.
+PORT="$PKG_PORT" node ./node_modules/@rancher/shell/scripts/serve-pkgs >/dev/null 2>&1 &
 serve_pid=$!
 trap 'kill "$serve_pid" 2>/dev/null || true' EXIT
 
