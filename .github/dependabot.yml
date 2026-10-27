@@ -1,0 +1,29 @@
+# Weekly, grouped updates. Yarn lives under the npm ecosystem. @rancher/shell is pinned exactly and
+# bumped deliberately (it decides which Rancher lines the build loads on), so it is left out here.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "@rancher/shell"
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Istanbul
+    groups:
+      actions:
+        patterns: ["*"]

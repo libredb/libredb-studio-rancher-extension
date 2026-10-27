@@ -1,0 +1,8 @@
+# Secret scanning for the extension repository: the default gitleaks rules, nothing allowlisted.
+# A fabricated fixture that matches a rule is suppressed by its exact fingerprint in .gitleaksignore,
+# never by a path or regex allowlist here, so a real secret added later is still reported.
+
+title = "LibreDB Studio Rancher extension secret scanning"
+
+[extend]
+useDefault = true
