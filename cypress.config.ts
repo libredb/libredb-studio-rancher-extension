@@ -4,7 +4,7 @@
 //   TEST_USERNAME   a Rancher user (defaults to admin)
 //   TEST_PASSWORD   that user's password
 //   TEST_SKIP=setup the Rancher is already set up, so @rancher/cypress's first-login specs are skipped
-//   LIBREDB_PKG_URL where the built package is served, see scripts/e2e/serve-pkg.sh
+//   LIBREDB_PKG_URL where the built package is served
 // scripts/e2e/run.sh sets all of them for the local lab.
 import { extendConfig } from '@rancher/cypress/extend-config';
 

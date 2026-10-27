@@ -1,9 +1,13 @@
 name: E2E
 
-# Cypress against a fresh single-node Rancher started on the runner. Manual only for now: the
+# Cypress against a fresh single-node Rancher started on the runner: the smoke spec on
+# rancher/rancher:v2.15-head on every pull request and push to main, or any image by hand. The
 # environment script that adds a downstream cluster, CloudNativePG and Studio lands with the
-# features that need them, and then this workflow joins pull requests and a nightly schedule.
+# features that need them, and the full suite then gets a nightly schedule.
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       rancher_image:
@@ -14,9 +18,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
-    name: E2E (${{ inputs.rancher_image }})
+    name: E2E (${{ inputs.rancher_image || 'rancher/rancher:v2.15-head' }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -37,7 +45,7 @@ jobs:
 
       - name: Start Rancher
         env:
-          RANCHER_IMAGE: ${{ inputs.rancher_image }}
+          RANCHER_IMAGE: ${{ inputs.rancher_image || 'rancher/rancher:v2.15-head' }}
         run: |
           set -euo pipefail
           bootstrap="$(openssl rand -hex 16)"
