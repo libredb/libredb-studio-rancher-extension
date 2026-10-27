@@ -7,7 +7,8 @@ A release publishes the extension in two forms, each from a GitHub release:
 | Extension chart | `libredb-studio-<version of pkg/libredb-studio/package.json>` | `build-extension-charts.yml` | the `gh-pages` branch, a Helm repository Rancher can add |
 | Extension Catalog Image | `libredb-studio-rancher-extension-<version of package.json>` | `build-extension-catalog.yml` | `ghcr.io/libredb/ui-extension-libredb-studio-rancher-extension`, for air-gapped installs |
 
-Both workflows call Rancher's reusable workflows at a pinned commit and run only when a release is published, or by hand.
+Both workflows call Rancher's reusable workflows at a pinned commit.
+Every published release triggers both, and each job runs only for its own tag prefix, so the other one is skipped; to run one by hand, start it from the release tag ref, not from a branch.
 
 Before the first release, the `gh-pages` branch must exist on GitHub (an orphan branch with no files is enough); the publish script refuses to run without it.
 

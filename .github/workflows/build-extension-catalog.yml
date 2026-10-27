@@ -1,5 +1,6 @@
-# Publishes the Extension Catalog Image to GHCR for air-gapped installs. Runs only on a published
-# GitHub release tagged libredb-studio-rancher-extension-<root version>, or by hand.
+# Publishes the Extension Catalog Image to GHCR for air-gapped installs. Every published GitHub
+# release triggers it, but the job runs only for a tag libredb-studio-rancher-extension-<root
+# version>, also when started by hand from that tag ref; a chart tag skips it.
 
 name: Build and Release Extension Catalog
 
@@ -15,6 +16,7 @@ defaults:
 
 jobs:
   build-extension-catalog:
+    if: startsWith(github.ref_name, 'libredb-studio-rancher-extension-')
     uses: rancher/dashboard/.github/workflows/build-extension-catalog.yml@8ded74ce753910cb3c12bbb72a6c02c5ca0ab68c # master 2026-10-27
     permissions:
       actions: write
