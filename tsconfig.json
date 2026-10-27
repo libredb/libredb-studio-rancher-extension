@@ -1,0 +1,50 @@
+{
+  "compilerOptions": {
+    "target": "ES2018",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "lib": [
+      "ESNext",
+      "ESNext.AsyncIterable",
+      "DOM"
+    ],
+    "esModuleInterop": true,
+    "allowJs": true,
+    "sourceMap": false,
+    "strict": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "~/*": [
+        "./*"
+      ],
+      "@/*": [
+        "./*"
+      ],
+      "@shell/*": [
+        "./node_modules/@rancher/shell/*"
+      ],
+      "@components/*": [
+        "./node_modules/@rancher/shell/rancher-components/*"
+      ],
+      "@pkg/*": [
+        "./pkg/*"
+      ]
+    },
+    "typeRoots": [
+      "./node_modules",
+      "./node_modules/@rancher/shell/types"
+    ],
+    "types": [
+      "@types/node",
+      "@types/jest",
+      "rancher",
+      "shell"
+    ],
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "exclude": [
+    "node_modules"
+  ]
+}
