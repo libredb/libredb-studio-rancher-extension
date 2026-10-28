@@ -1,7 +1,7 @@
 <script lang="ts">
 import { defineComponent, PropType } from 'vue';
 import { CNPG_CLUSTER_KIND, ContractResource } from '../contract/kinds';
-import { connectionId, studioLink } from '../contract/connection-id';
+import { databaseLink } from '../contract/connection-id';
 import { ensureReview, reviewNow, reviewState } from '../services/access';
 import type { StudioLink } from '../services/navlink';
 import type { StoreLike } from '../services/types';
@@ -78,9 +78,7 @@ export default defineComponent({
         this.opening = false;
 
         if (allowed) {
-          const id = connectionId(CNPG_CLUSTER_KIND.slug, this.namespace, this.row.metadata.name);
-
-          window.open(studioLink(link.toURL, id), '_blank', 'noopener,noreferrer');
+          window.open(databaseLink(link.toURL, CNPG_CLUSTER_KIND, this.row), '_blank', 'noopener,noreferrer');
         }
       });
     },
