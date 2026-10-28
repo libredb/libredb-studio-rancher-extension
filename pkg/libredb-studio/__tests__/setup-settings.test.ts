@@ -1598,7 +1598,7 @@ describe('uninstalling Studio', () => {
   it('keeps the namespace, naming it, while the TLS Secret the owner created is left there', async() => {
     const { store, kube } = installed();
 
-    kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+    kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'zzzzzzzzzzzzzzzz' } });
     const result = await uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options());
 
     expect(result.undone).toContainEqual({
