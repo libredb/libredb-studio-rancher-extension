@@ -79,13 +79,13 @@ describe('translations', () => {
         'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
         'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
         'changedSinceLoad', 'mayBeLeft', 'notAcknowledged', 'notRegenerated', 'notRestarted', 'clientMissing', 'clientNotManaged', 'objectNotManaged', 'ssoNeedsAdmin',
-        'ssoNotOn', 'notConfirmedClient',
+        'ssoNotOn', 'notConfirmedClient', 'secretKeyMissing', 'regenerateUnknown',
       ]),
       ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
-        'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'ssoOnIntro', 'ssoAdminOnly', 'rotateTitle', 'rotateIntro', 'rotate', 'rotateConfirm',
-        'turnOffTitle', 'turnOffWarning', 'turnOff', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle',
-        'done.namespaces', 'done.sso', 'done.rotate', 'done.ssoOff', 'done.uninstall', 'failed.namespaces', 'failed.sso', 'failed.rotate', 'failed.ssoOff',
-        'failed.uninstall'].map((key) => `libredbStudio.settings.${ key }`),
+        'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'ssoOnIntro', 'ssoAdminOnly', 'rotateTitle', 'rotateIntro', 'rotate', 'rotateWarning',
+        'turnOffTitle', 'turnOffWarning', 'turnOff', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle', 'refused',
+        'done.namespaces', 'done.sso', 'done.rotate', 'done.ssoOff', 'done.uninstall', 'failed.namespaces', 'failed.sso', 'failed.rotate', 'failed.rotateUnchanged',
+        'failed.rotateRestart', 'failed.ssoOff', 'failed.uninstall'].map((key) => `libredbStudio.settings.${ key }`),
     ];
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);
@@ -100,6 +100,17 @@ describe('translations', () => {
     );
     expect(lookup('libredbStudio.setup.form.sso')).toBe('Sign in with Rancher (single sign-on, experimental)');
     expect(lookup('libredbStudio.settings.ssoTitle')).toBe('Single sign-on (experimental)');
+  });
+
+  it('say word for word what rotating the client secret does to everyone signed in to LibreDB Studio', () => {
+    const enUs = yaml.load(fs.readFileSync(enUsPath, 'utf8')) as Record<string, unknown>;
+    const lookup = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enUs);
+
+    // The restart empties Studio's in-memory record of each person's groups, so no session outlives it
+    expect(lookup('libredbStudio.settings.rotateWarning')).toBe(
+      'Rancher replaces the client secret of {client} at once, and LibreDB Studio restarts with the new one. Signing in fails until it has restarted, and the restart ' +
+      'signs everyone out of LibreDB Studio once: people still signed in to Rancher are signed in again on their next click, everyone else sees Rancher\'s sign-in page.'
+    );
   });
 
   it('offer no choice of chart repository, which the setup does not have', () => {

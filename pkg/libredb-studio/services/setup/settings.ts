@@ -14,7 +14,7 @@ import {
   isManaged, oidcClientName
 } from './names';
 import {
-  copyClientSecret, createOidcClient, oidcClientPath, regenerateClientSecret, waitForClientId, OidcClient
+  clientProblem, copyClientSecret, createOidcClient, oidcClientPath, regenerateClientSecret, waitForClientId, OidcClient
 } from './oidc-client';
 import {
   aggregationCheck, rancherContext, ssoChecks, Check, RancherContext
@@ -88,6 +88,22 @@ export interface ChangeResult {
   undone: UndoEvent[];
   /** The record as it now stands, after a change that went through */
   record?: SetupRecord;
+}
+
+/** Why a regenerate step failed when Rancher may have replaced the client secret all the same */
+const SECRET_MAY_HAVE_CHANGED = ['notRegenerated', 'regenerateUnknown'];
+
+/**
+ * How far a rotation that failed in a step got, as a key under libredbStudio.settings.failed:
+ * Rancher's client secret as it was, a new one Studio may not have, or Studio not yet restarted with
+ * the new one
+ */
+export function rotationFailure(result: ChangeResult): 'rotateUnchanged' | 'rotate' | 'rotateRestart' {
+  if (result.failedStep === 'restart') {
+    return 'rotateRestart';
+  }
+
+  return result.failedStep === 'regenerate' && !SECRET_MAY_HAVE_CHANGED.includes(result.failure?.reason as string) ? 'rotateUnchanged' : 'rotate';
 }
 
 /**
@@ -473,13 +489,15 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 }
 
 /**
- * Rotates the OIDC client secret, which needs a Rancher administrator: Rancher's regenerate
- * annotation on the client the record names, the new secret copied over Studio's own Secret, then
- * Studio restarted to take it. Rancher replaces the old secret at once, so a sign-in between that
- * and Studio's restart fails. The client and Studio's Secret change only while they carry the
- * extension's labels, and nothing changes in a namespace moved into a project.
+ * Rotates the OIDC client secret after the client's name was typed by hand, which needs a Rancher
+ * administrator: Rancher's regenerate annotation on the client the record names, the new secret
+ * copied over Studio's own Secret, then Studio restarted to take it. Rancher replaces the old secret
+ * at once, so a sign-in between that and Studio's restart fails, and the restart signs everyone out
+ * of Studio once, since its record of each person's groups lives in memory. The client and Studio's
+ * Secret change only while they carry the extension's labels, and nothing changes in a namespace
+ * moved into a project.
  */
-export async function rotateClientSecret(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, options: ChangeOptions = {}): Promise<ChangeResult> {
+export async function rotateClientSecret(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, confirm: string, options: ChangeOptions = {}): Promise<ChangeResult> {
   const problem = recordProblem(record, cluster);
 
   if (problem) {
@@ -491,6 +509,10 @@ export async function rotateClientSecret(store: StoreLike, cluster: string, reco
   }
 
   const name = record.sso.client;
+
+  if (confirm.trim() !== name) {
+    return refused('notConfirmedClient');
+  }
 
   if (!await canManageClient(store, name)) {
     return refused('ssoNeedsAdmin');
@@ -505,14 +527,13 @@ export async function rotateClientSecret(store: StoreLike, cluster: string, reco
     return refused('inProject', { namespace: STUDIO_NAMESPACE });
   }
 
-  const client = await kubeGet<OidcClient>(store, LOCAL_CLUSTER, oidcClientPath(name));
+  // Checked again right before the annotation, which is what decides
+  const unusable = clientProblem(await kubeGet<OidcClient>(store, LOCAL_CLUSTER, oidcClientPath(name)), name);
 
-  if (!client) {
-    return refused('clientMissing', { name });
-  }
-
-  if (!isManaged(client.metadata?.labels)) {
-    return refused('clientNotManaged', { name });
+  if (unusable) {
+    return {
+      ok: false, failure: unusable, undone: []
+    };
   }
 
   // Its labels alone, so the old secret never reaches the browser
@@ -525,7 +546,7 @@ export async function rotateClientSecret(store: StoreLike, cluster: string, reco
   let clientId = '';
   const failed = await runSteps<RotateStepId>(['regenerate', 'oidcSecret', 'restart'], {
     regenerate: async() => {
-      clientId = await regenerateClientSecret(store, name, client, options);
+      clientId = await regenerateClientSecret(store, name, options);
 
       return 'done';
     },
