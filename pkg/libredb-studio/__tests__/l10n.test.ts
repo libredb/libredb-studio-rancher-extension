@@ -34,6 +34,7 @@ describe('translations', () => {
       'libredbStudio.databases.open',
       'libredbStudio.databases.noSchema',
       'libredbStudio.databases.cannotList',
+      'libredbStudio.open.refused',
       ...['not-set-up', 'pending', 'denied', 'failed'].map((state) => `libredbStudio.databases.reason.${ state }`),
       ...['not-set-up', 'ready', 'not-ready', 'unknown', 'failed', 'open', 'severalLinks'].map((key) => `libredbStudio.status.${ key }`),
     ];

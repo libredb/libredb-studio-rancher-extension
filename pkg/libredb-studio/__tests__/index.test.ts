@@ -1,8 +1,10 @@
-import { IPlugin } from '@shell/core/types';
+import { ActionLocation, IPlugin } from '@shell/core/types';
 import extension from '../index';
 import packageJson from '../package.json';
 import * as product from '../product';
 import routes from '../routing';
+import openInStudioAction from '../actions/open-in-studio';
+import { CNPG_CLUSTER_TYPE } from '../config';
 
 
 /**
@@ -44,5 +46,14 @@ describe('extension entry point', () => {
 
     expect(plugin.addProduct).toHaveBeenCalledWith(product);
     expect(plugin.addRoutes).toHaveBeenCalledWith(routes);
+  });
+
+  it('should add the open action to the row menu of supported databases only', () => {
+    const plugin = mockPlugin();
+
+    extension(plugin);
+
+    expect(plugin.addAction).toHaveBeenCalledTimes(1);
+    expect(plugin.addAction).toHaveBeenCalledWith(ActionLocation.TABLE, { resource: [CNPG_CLUSTER_TYPE] }, openInStudioAction);
   });
 });
