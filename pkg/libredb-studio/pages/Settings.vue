@@ -12,7 +12,9 @@ import { PRODUCT_NAME, SETUP_ROUTE } from '../config';
 import { failureOf } from '../services/setup/failure';
 import { namespacesError } from '../services/setup/form';
 import { RECORD_CONFIGMAP, STUDIO_NAMESPACE } from '../services/setup/names';
-import { enableSso, loadSettings, saveNamespaces, uninstallStudio } from '../services/setup/settings';
+import {
+  disableSso, enableSso, loadSettings, rotateClientSecret, saveNamespaces, uninstallStudio
+} from '../services/setup/settings';
 import type { UndoEvent } from '../services/setup/cleanup';
 import type { StepView } from '../services/setup/install';
 import type {
@@ -21,10 +23,14 @@ import type {
 import type { SetupRecord } from '../services/setup/values';
 import type { StoreLike } from '../services/types';
 
+type ChangeKind = 'namespaces' | 'sso' | 'rotate' | 'ssoOff' | 'uninstall';
+
 /**
  * F7, Studio's settings: its state and the aggregation warning, the namespaces it discovers, single
- * sign-on for a Studio installed with its own sign-in, and uninstall after the release name is
- * typed by hand. Each change is shown step by step, and the page reloads after it.
+ * sign-on (turned on for a Studio installed with its own sign-in; once on, its client secret rotated
+ * or single sign-on turned off again after the OIDC client's name is typed by hand, both by a Rancher
+ * administrator), and uninstall after the release name is typed by hand. Each change is shown step
+ * by step, and the page reloads after it.
  */
 export default defineComponent({
   name: 'LibreDBSettings',
@@ -35,18 +41,20 @@ export default defineComponent({
 
   data() {
     return {
-      settings:      undefined as StudioSettings | undefined,
-      namespaces:    [] as string[],
-      confirm:       '',
-      confirmingSso: false,
-      ownersTrusted: false,
-      busy:          false,
-      kind:          undefined as 'namespaces' | 'sso' | 'uninstall' | undefined,
-      steps:         [] as StepView[],
-      undone:        [] as UndoEvent[],
-      result:        undefined as ChangeResult | undefined,
-      namespace:     STUDIO_NAMESPACE,
-      recordName:    RECORD_CONFIGMAP,
+      settings:         undefined as StudioSettings | undefined,
+      namespaces:       [] as string[],
+      confirm:          '',
+      confirmingSso:    false,
+      ownersTrusted:    false,
+      confirmingRotate: false,
+      ssoOffConfirm:    '',
+      busy:             false,
+      kind:             undefined as ChangeKind | undefined,
+      steps:            [] as StepView[],
+      undone:           [] as UndoEvent[],
+      result:           undefined as ChangeResult | undefined,
+      namespace:        STUDIO_NAMESPACE,
+      recordName:       RECORD_CONFIGMAP,
     };
   },
 
@@ -76,6 +84,10 @@ export default defineComponent({
       return !!this.record && this.confirm.trim() === this.record.release.name;
     },
 
+    ssoOffConfirmed(): boolean {
+      return !!this.record?.sso && this.ssoOffConfirm.trim() === this.record.sso.client;
+    },
+
     setupRoute(): Record<string, unknown> {
       return { name: SETUP_ROUTE, params: { cluster: this.cluster, product: PRODUCT_NAME } };
     },
@@ -94,10 +106,11 @@ export default defineComponent({
         this.namespaces = settings.record ? settings.record.namespaces.slice() : [];
         this.confirmingSso = false;
         this.ownersTrusted = false;
+        this.confirmingRotate = false;
       });
     },
 
-    start(kind: 'namespaces' | 'sso' | 'uninstall', steps: ChangeStepId[]): ChangeOptions {
+    start(kind: ChangeKind, steps: ChangeStepId[]): ChangeOptions {
       this.busy = true;
       this.kind = kind;
       this.result = undefined;
@@ -118,6 +131,7 @@ export default defineComponent({
       this.result = result;
       this.busy = false;
       this.confirm = '';
+      this.ssoOffConfirm = '';
 
       return this.load();
     },
@@ -158,6 +172,31 @@ export default defineComponent({
 
       return enableSso(this.$store as StoreLike, this.cluster, this.record as SetupRecord, settings.app as AppInfo, sso.context, confirmed, options)
         .then(this.finish, this.broke);
+    },
+
+    askRotate(): void {
+      this.confirmingRotate = true;
+    },
+
+    cancelRotate(): void {
+      this.confirmingRotate = false;
+    },
+
+    rotate(): Promise<void> {
+      const options = this.start('rotate', ['regenerate', 'oidcSecret', 'restart']);
+
+      return rotateClientSecret(this.$store as StoreLike, this.cluster, this.record as SetupRecord, this.settings?.app as AppInfo, options)
+        .then(this.finish, this.broke);
+    },
+
+    turnOffSso(): Promise<void> {
+      const record = this.record as SetupRecord;
+      const options = this.start('ssoOff', ['upgrade', 'removeOidcClient', 'removeOidcSecret', 'removeRancherCA', 'saveRecord']);
+
+      // Exactly what the page showed: the name typed by hand and the namespaces to discover
+      const confirmed = { name: this.ssoOffConfirm, namespaces: record.namespaces.slice() };
+
+      return disableSso(this.$store as StoreLike, this.cluster, record, this.settings?.app as AppInfo, confirmed, options).then(this.finish, this.broke);
     },
 
     uninstall(): Promise<void> {
@@ -354,6 +393,86 @@ export default defineComponent({
                 @click="cancelSso"
               >
                 {{ t('libredbStudio.settings.cancel', {}, true) }}
+              </button>
+            </div>
+          </template>
+        </section>
+        <section
+          v-if="settings.app && record.sso"
+          class="mb-20"
+          data-testid="libredb-settings-sso-on"
+        >
+          <h3>{{ t('libredbStudio.settings.ssoTitle', {}, true) }}</h3>
+          <p>{{ t('libredbStudio.settings.ssoOnIntro', { client: record.sso.client }, true) }}</p>
+          <Banner
+            v-if="!settings.ssoAdmin"
+            color="info"
+            data-testid="libredb-settings-sso-admin-only"
+            :label="t('libredbStudio.settings.ssoAdminOnly')"
+          />
+          <template v-else>
+            <div
+              class="mb-20"
+              data-testid="libredb-settings-rotate"
+            >
+              <h4>{{ t('libredbStudio.settings.rotateTitle', {}, true) }}</h4>
+              <p>{{ t('libredbStudio.settings.rotateIntro', {}, true) }}</p>
+              <button
+                v-if="!confirmingRotate"
+                type="button"
+                class="btn role-primary"
+                :disabled="busy"
+                data-testid="libredb-settings-rotate-start"
+                @click="askRotate"
+              >
+                {{ t('libredbStudio.settings.rotate', {}, true) }}
+              </button>
+              <div
+                v-else
+                data-testid="libredb-settings-rotate-confirm"
+              >
+                <p>{{ t('libredbStudio.settings.rotateConfirm', { client: record.sso.client }, true) }}</p>
+                <button
+                  type="button"
+                  class="btn role-primary mr-10"
+                  :disabled="busy"
+                  data-testid="libredb-settings-rotate-confirm-button"
+                  @click="rotate"
+                >
+                  {{ t('libredbStudio.settings.confirm', {}, true) }}
+                </button>
+                <button
+                  type="button"
+                  class="btn role-secondary"
+                  :disabled="busy"
+                  data-testid="libredb-settings-rotate-cancel"
+                  @click="cancelRotate"
+                >
+                  {{ t('libredbStudio.settings.cancel', {}, true) }}
+                </button>
+              </div>
+            </div>
+            <div data-testid="libredb-settings-sso-off">
+              <h4>{{ t('libredbStudio.settings.turnOffTitle', {}, true) }}</h4>
+              <Banner
+                color="warning"
+                :label="t('libredbStudio.settings.turnOffWarning', { client: record.sso.client, namespace })"
+              />
+              <p>{{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }, true) }}</p>
+              <LabeledInput
+                v-model:value="ssoOffConfirm"
+                class="mb-10"
+                :label="t('libredbStudio.settings.typeName', { name: record.sso.client })"
+                data-testid="libredb-settings-sso-off-name"
+              />
+              <button
+                type="button"
+                class="btn bg-error"
+                :disabled="busy || !ssoOffConfirmed"
+                data-testid="libredb-settings-sso-off-button"
+                @click="turnOffSso"
+              >
+                {{ t('libredbStudio.settings.turnOff', {}, true) }}
               </button>
             </div>
           </template>

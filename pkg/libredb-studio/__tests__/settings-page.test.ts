@@ -2,22 +2,26 @@ import { flushPromises, mount, RouterLinkStub, VueWrapper } from '@vue/test-util
 import { defineComponent, h } from 'vue';
 import Settings from '../pages/Settings.vue';
 import {
-  enableSso, loadSettings, saveNamespaces, uninstallStudio, ChangeOptions, StudioSettings
+  disableSso, enableSso, loadSettings, rotateClientSecret, saveNamespaces, uninstallStudio, ChangeOptions, StudioSettings
 } from '../services/setup/settings';
 import type { SetupRecord } from '../services/setup/values';
 import { RANCHER_CA } from './helpers/cluster';
 
 jest.mock('../services/setup/settings', () => ({
   ...jest.requireActual('../services/setup/settings'),
-  loadSettings:    jest.fn(),
-  saveNamespaces:  jest.fn(),
-  enableSso:       jest.fn(),
-  uninstallStudio: jest.fn(),
+  loadSettings:       jest.fn(),
+  saveNamespaces:     jest.fn(),
+  enableSso:          jest.fn(),
+  rotateClientSecret: jest.fn(),
+  disableSso:         jest.fn(),
+  uninstallStudio:    jest.fn(),
 }));
 
 const loadMock = loadSettings as jest.Mock;
 const saveMock = saveNamespaces as jest.Mock;
 const ssoMock = enableSso as jest.Mock;
+const rotateMock = rotateClientSecret as jest.Mock;
+const ssoOffMock = disableSso as jest.Mock;
 const uninstallMock = uninstallStudio as jest.Mock;
 
 // Arguments show as JSON, none as nothing; whether a text was asked for raw is checked on its own
@@ -116,6 +120,8 @@ describe('settings page', () => {
     loadMock.mockReset();
     saveMock.mockReset();
     ssoMock.mockReset();
+    rotateMock.mockReset();
+    ssoOffMock.mockReset();
     uninstallMock.mockReset();
   });
 
@@ -402,6 +408,150 @@ describe('settings page', () => {
 
       expect(text(wrapper, 'libredb-settings-summary')).toContain('%libredbStudio.settings.ssoOn%{"client":"libredb-studio-c-m-1"}');
       expect(has(wrapper, 'libredb-settings-sso')).toBe(false);
+    });
+  });
+
+  describe('single sign-on once it is on', () => {
+    const SSO_RECORD: SetupRecord = {
+      ...RECORD,
+      sso: {
+        client: 'libredb-studio-c-m-1', issuer: 'https://rancher.example.com/oidc', scope: 'openid profile groups', rancherCA: true
+      }
+    };
+    const SSO_ON: StudioSettings = {
+      ...SETTINGS, record: SSO_RECORD, sso: undefined, ssoAdmin: true
+    };
+    const steps = (wrapper: VueWrapper) => wrapper.findAll('[data-testid^="libredb-step-"]').map((item) => item.attributes('data-testid'));
+
+    it('rotates the client secret once the administrator confirms, and shows each step', async() => {
+      rotateMock.mockImplementation((_store: unknown, _cluster: string, _record: unknown, _app: unknown, options: ChangeOptions) => {
+        options.onStep?.({ step: 'regenerate', state: 'done' });
+
+        return Promise.resolve({ ok: true, undone: [] });
+      });
+      const wrapper = await loaded(SSO_ON);
+
+      expect(text(wrapper, 'libredb-settings-sso-on')).toContain('%libredbStudio.settings.ssoOnIntro%{"client":"libredb-studio-c-m-1"}');
+      await wrapper.find('[data-testid="libredb-settings-rotate-start"]').trigger('click');
+
+      expect(text(wrapper, 'libredb-settings-rotate-confirm')).toContain('%libredbStudio.settings.rotateConfirm%{"client":"libredb-studio-c-m-1"}');
+      expect(rotateMock).not.toHaveBeenCalled();
+
+      await wrapper.find('[data-testid="libredb-settings-rotate-confirm-button"]').trigger('click');
+      await flushPromises();
+
+      expect(rotateMock).toHaveBeenCalledWith(expect.anything(), 'c-m-1', SSO_RECORD, SETTINGS.app, expect.anything());
+      expect(steps(wrapper)).toStrictEqual(['libredb-step-regenerate', 'libredb-step-oidcSecret', 'libredb-step-restart']);
+      expect(wrapper.find('[data-testid="libredb-step-regenerate"]').classes()).toContain('step-done');
+      expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.done.rotate%');
+      expect(loadMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('can call the rotation off at the confirmation', async() => {
+      const wrapper = await loaded(SSO_ON);
+
+      await wrapper.find('[data-testid="libredb-settings-rotate-start"]').trigger('click');
+      await wrapper.find('[data-testid="libredb-settings-rotate-cancel"]').trigger('click');
+
+      expect(has(wrapper, 'libredb-settings-rotate-confirm')).toBe(false);
+      expect(has(wrapper, 'libredb-settings-rotate-start')).toBe(true);
+      expect(rotateMock).not.toHaveBeenCalled();
+    });
+
+    it('says why a rotation was refused before it started', async() => {
+      rotateMock.mockResolvedValue({
+        ok: false, failure: { reason: 'clientNotManaged', args: { name: 'libredb-studio-c-m-1' } }, undone: []
+      });
+      const wrapper = await loaded(SSO_ON);
+
+      await wrapper.find('[data-testid="libredb-settings-rotate-start"]').trigger('click');
+      await wrapper.find('[data-testid="libredb-settings-rotate-confirm-button"]').trigger('click');
+      await flushPromises();
+
+      expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.failed.rotate%');
+      expect(text(wrapper, 'libredb-settings-failure')).toBe('%libredbStudio.setup.failure.clientNotManaged%{"name":"libredb-studio-c-m-1"}');
+    });
+
+    it('turns single sign-on off only once the OIDC client\'s name is typed by hand', async() => {
+      ssoOffMock.mockResolvedValue({ ok: true, undone: [] });
+      const wrapper = await loaded(SSO_ON);
+
+      expect(text(wrapper, 'libredb-settings-sso-off')).toContain('%libredbStudio.settings.turnOffWarning%{"client":"libredb-studio-c-m-1","namespace":"libredb-studio"}');
+      expect(text(wrapper, 'libredb-settings-sso-off')).toContain('%libredbStudio.settings.ssoNamespaces%{"namespaces":"team-a"}');
+      expect(field(wrapper, 'libredb-settings-sso-off-name').props('label')).toBe('%libredbStudio.settings.typeName%{"name":"libredb-studio-c-m-1"}');
+      expect(disabled(wrapper, 'libredb-settings-sso-off-button')).toBe(true);
+
+      field(wrapper, 'libredb-settings-sso-off-name').vm.$emit('update:value', 'libredb-studio');
+      await flushPromises();
+      expect(disabled(wrapper, 'libredb-settings-sso-off-button')).toBe(true);
+
+      field(wrapper, 'libredb-settings-sso-off-name').vm.$emit('update:value', ' libredb-studio-c-m-1 ');
+      await flushPromises();
+      expect(disabled(wrapper, 'libredb-settings-sso-off-button')).toBe(false);
+      await wrapper.find('[data-testid="libredb-settings-sso-off-button"]').trigger('click');
+      await flushPromises();
+
+      expect(ssoOffMock).toHaveBeenCalledWith(expect.anything(), 'c-m-1', SSO_RECORD, SETTINGS.app, { name: ' libredb-studio-c-m-1 ', namespaces: ['team-a'] }, expect.anything());
+      expect(steps(wrapper)).toStrictEqual([
+        'libredb-step-upgrade', 'libredb-step-removeOidcClient', 'libredb-step-removeOidcSecret', 'libredb-step-removeRancherCA', 'libredb-step-saveRecord'
+      ]);
+      expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.done.ssoOff%');
+      expect(field(wrapper, 'libredb-settings-sso-off-name').props('value')).toBe('');
+    });
+
+    it('says that single sign-on could not be turned off completely', async() => {
+      ssoOffMock.mockResolvedValue({
+        ok: false, failedStep: 'removeOidcSecret', failure: { reason: 'request', args: { detail: 'HTTP 500' } }, undone: []
+      });
+      const wrapper = await loaded(SSO_ON);
+
+      field(wrapper, 'libredb-settings-sso-off-name').vm.$emit('update:value', 'libredb-studio-c-m-1');
+      await flushPromises();
+      await wrapper.find('[data-testid="libredb-settings-sso-off-button"]').trigger('click');
+      await flushPromises();
+
+      expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.failed.ssoOff%');
+      expect(has(wrapper, 'libredb-settings-failure')).toBe(false);
+    });
+
+    it('tells anyone but a Rancher administrator that rotating and turning off need one', async() => {
+      const wrapper = await loaded({ ...SSO_ON, ssoAdmin: false });
+
+      expect(text(wrapper, 'libredb-settings-sso-admin-only')).toBe('%libredbStudio.settings.ssoAdminOnly%');
+      expect(has(wrapper, 'libredb-settings-rotate')).toBe(false);
+      expect(has(wrapper, 'libredb-settings-sso-off')).toBe(false);
+      expect(has(wrapper, 'libredb-settings-sso')).toBe(false);
+    });
+
+    it('offers neither while the app is not there', async() => {
+      const wrapper = await loaded({ ...SSO_ON, app: undefined });
+
+      expect(has(wrapper, 'libredb-settings-sso-on')).toBe(false);
+      expect(has(wrapper, 'libredb-settings-uninstall')).toBe(true);
+    });
+
+    it('asks t for raw text wherever it renders a message as text', async() => {
+      loadMock.mockResolvedValue(SSO_ON);
+      const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+      const wrapper = mount(Settings, {
+        global: {
+          mocks: {
+            t: raw, $store: { getters: {}, dispatch: jest.fn() }, $route: { params: { cluster: 'c-m-1' } }
+          },
+          stubs: {
+            Banner: BannerStub, Loading: true, LabeledInput: fieldStub('LabeledInput'), LabeledSelect: fieldStub('LabeledSelect'), RouterLink: RouterLinkStub, StudioStatus: true
+          },
+        },
+      });
+
+      await flushPromises();
+      await wrapper.find('[data-testid="libredb-settings-rotate-start"]').trigger('click');
+
+      const keys = ['ssoOnIntro', 'rotateTitle', 'rotateIntro', 'rotateConfirm', 'turnOffTitle', 'turnOff', 'ssoNamespaces'].map((key) => `libredbStudio.settings.${ key }`);
+      const asked = raw.mock.calls.filter((call) => keys.includes(call[0]));
+
+      expect([...new Set(asked.map((call) => call[0]))].sort()).toStrictEqual([...keys].sort());
+      expect(asked.every((call) => call[2] === true)).toBe(true);
     });
   });
 

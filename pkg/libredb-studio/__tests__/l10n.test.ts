@@ -68,18 +68,24 @@ describe('translations', () => {
       ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
       ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'tlsSecretNew', 'tlsSecretExisting', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'ssoTrust', 'redirect', 'localSignIn', 'install']),
       ...under('form.errors.', ['host', 'ingressClass', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'tooManyNamespaces', 'sso', 'ssoTrust']),
-      ...under('steps.', ['namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready', 'upgrade', 'saveRecord']),
+      ...under('steps.', [
+        'namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready', 'upgrade', 'saveRecord', 'regenerate', 'restart', 'removeOidcClient',
+        'removeOidcSecret', 'removeRancherCA',
+      ]),
       ...under('state.', ['pending', 'running', 'done', 'skipped', 'failed']),
       ...under('undo.', ['release', 'upgrade', 'navLink', 'record', 'rancherCA', 'oidcSecret', 'oidcClient', 'namespace']),
       ...under('outcome.', ['removed', 'gone', 'kept', 'restored', 'failed', 'unchecked']),
       ...under('failure.', [
         'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
         'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
-        'changedSinceLoad', 'mayBeLeft', 'notAcknowledged',
+        'changedSinceLoad', 'mayBeLeft', 'notAcknowledged', 'notRegenerated', 'notRestarted', 'clientMissing', 'clientNotManaged', 'objectNotManaged', 'ssoNeedsAdmin',
+        'ssoNotOn', 'notConfirmedClient',
       ]),
       ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
-        'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle',
-        'done.namespaces', 'done.sso', 'done.uninstall', 'failed.namespaces', 'failed.sso', 'failed.uninstall'].map((key) => `libredbStudio.settings.${ key }`),
+        'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'ssoOnIntro', 'ssoAdminOnly', 'rotateTitle', 'rotateIntro', 'rotate', 'rotateConfirm',
+        'turnOffTitle', 'turnOffWarning', 'turnOff', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle',
+        'done.namespaces', 'done.sso', 'done.rotate', 'done.ssoOff', 'done.uninstall', 'failed.namespaces', 'failed.sso', 'failed.rotate', 'failed.ssoOff',
+        'failed.uninstall'].map((key) => `libredbStudio.settings.${ key }`),
     ];
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);

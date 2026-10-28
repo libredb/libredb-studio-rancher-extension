@@ -45,6 +45,17 @@ export function kubeMetadata(store: StoreLike, cluster: string, path: string): P
   return kubeGet<ObjectMetadata>(store, cluster, path, { accept: METADATA_ONLY });
 }
 
+/** The content type of a JSON merge patch, which names only what changes */
+export const MERGE_PATCH = 'application/merge-patch+json';
+
+/**
+ * Changes part of the object at the path with a JSON merge patch, and answers the object as it then
+ * is. A patch that names the object's resourceVersion applies only to that version.
+ */
+export function kubePatch<T = unknown>(store: StoreLike, cluster: string, path: string, patch: unknown): Promise<T> {
+  return kube<T>(store, cluster, 'patch', path, patch, { 'Content-Type': MERGE_PATCH });
+}
+
 /** Deletes the object at the path: true when it was there, false when it was already gone */
 export async function kubeDelete(store: StoreLike, cluster: string, path: string): Promise<boolean> {
   try {
