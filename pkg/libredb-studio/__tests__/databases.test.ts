@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils';
 import { defineComponent, h } from 'vue';
 import Databases from '../pages/Databases.vue';
 import StudioStatus from '../components/StudioStatus.vue';
@@ -28,8 +28,24 @@ const BannerStub = defineComponent({
   },
 });
 
+const SETUP_ROUTE = { name: 'c-cluster-libredb-setup', params: { cluster: 'c-1', product: 'libredb' } };
+
 describe('studio status', () => {
-  const render = (props: { status: Status, link?: typeof LINK, found?: number }) => mount(StudioStatus, { props, global: { mocks: { t }, stubs: { Banner: BannerStub } } });
+  const render = (props: { status: Status, link?: typeof LINK, found?: number, setupRoute?: typeof SETUP_ROUTE }) => mount(StudioStatus, { props, global: { mocks: { t }, stubs: { Banner: BannerStub, RouterLink: RouterLinkStub } } });
+
+  it('offers the setup where Studio is not set up, to someone who may set it up', () => {
+    const wrapper = render({ status: 'not-set-up', setupRoute: SETUP_ROUTE });
+
+    expect(wrapper.findComponent(RouterLinkStub).props('to')).toStrictEqual(SETUP_ROUTE);
+    expect(wrapper.find('[data-testid="libredb-studio-setup"]').text()).toBe('%libredbStudio.setup.title%');
+  });
+
+  it('offers no setup to anyone else, nor where Studio is set up', () => {
+    expect(render({ status: 'not-set-up' }).findComponent(RouterLinkStub).exists()).toBe(false);
+    expect(render({
+      status: 'ready', link: LINK, setupRoute: SETUP_ROUTE
+    }).findComponent(RouterLinkStub).exists()).toBe(false);
+  });
 
   it.each([
     ['not-set-up', 'warning'],
@@ -174,13 +190,14 @@ describe('databases page', () => {
     navlinks?: unknown[];
     deployment?: unknown;
     reviewAllowed?: boolean;
+    clusterRoleSchema?: Record<string, unknown>;
   }
 
   const storeFor = ({
-    cnpgSchema, navlinks = [], deployment, reviewAllowed = true
+    cnpgSchema, navlinks = [], deployment, reviewAllowed = true, clusterRoleSchema
   }: StoreSetup) => {
     const schemas: Record<string, unknown> = {
-      [CNPG_CLUSTER_TYPE]: cnpgSchema, [NAVLINK_TYPE]: {}, [DEPLOYMENT_TYPE]: {}
+      [CNPG_CLUSTER_TYPE]: cnpgSchema, [NAVLINK_TYPE]: {}, [DEPLOYMENT_TYPE]: {}, 'rbac.authorization.k8s.io.clusterrole': clusterRoleSchema
     };
     const dispatch = jest.fn((action: string) => {
       switch (action) {
@@ -202,7 +219,7 @@ describe('databases page', () => {
         t, $store: store, $route: { params: { cluster: 'c-1' } }
       },
       stubs: {
-        Banner: BannerStub, Loading: { template: '<div data-testid="loading" />' }, PaginatedResourceTable: TableStub
+        Banner: BannerStub, Loading: { template: '<div data-testid="loading" />' }, PaginatedResourceTable: TableStub, RouterLink: RouterLinkStub
       },
     },
   });
@@ -238,6 +255,23 @@ describe('databases page', () => {
 
     expect(wrapper.find('[data-testid="libredb-studio-status"]').text()).toContain('%libredbStudio.status.not-set-up%');
     expect(wrapper.find('[data-testid="libredb-access-not-set-up"]').exists()).toBe(true);
+  });
+
+  it('links to the setup for someone who could create the chart\'s cluster roles', async() => {
+    const owner = render(storeFor({ cnpgSchema: CNPG_SCHEMA, clusterRoleSchema: { collectionMethods: ['GET', 'POST'] } }));
+
+    await flushPromises();
+    expect(owner.findComponent(StudioStatus).props('setupRoute')).toStrictEqual(SETUP_ROUTE);
+
+    const member = render(storeFor({ cnpgSchema: CNPG_SCHEMA, clusterRoleSchema: { collectionMethods: ['GET'] } }));
+
+    await flushPromises();
+    expect(member.findComponent(StudioStatus).props('setupRoute')).toBeUndefined();
+
+    const noSchema = render(storeFor({ cnpgSchema: CNPG_SCHEMA }));
+
+    await flushPromises();
+    expect(noSchema.findComponent(StudioStatus).props('setupRoute')).toBeUndefined();
   });
 
   it('tells a user who cannot list Clusters what is missing and who can fix it', async() => {

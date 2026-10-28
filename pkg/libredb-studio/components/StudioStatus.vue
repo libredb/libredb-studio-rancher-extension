@@ -12,7 +12,10 @@ const COLORS: Record<StudioStatus, string> = {
   failed:       'warning',
 };
 
-/** The Databases page's header: is Studio set up in this cluster, is it running, where is it */
+/**
+ * The Databases page's header: is Studio set up in this cluster, is it running, where is it, and
+ * where it is not set up, the way to set it up for someone who may.
+ */
 export default defineComponent({
   name: 'StudioStatus',
 
@@ -30,6 +33,11 @@ export default defineComponent({
     found: {
       type:    Number,
       default: 0,
+    },
+    /** Where Studio is not set up, the setup for someone who may set it up */
+    setupRoute: {
+      type:    Object as PropType<Record<string, unknown>>,
+      default: undefined,
     },
   },
 
@@ -56,6 +64,14 @@ export default defineComponent({
         class="ml-10"
         data-testid="libredb-studio-link"
       >{{ t('libredbStudio.status.open') }}</a>
+      <router-link
+        v-else-if="status === 'not-set-up' && setupRoute"
+        :to="setupRoute"
+        class="ml-10"
+        data-testid="libredb-studio-setup"
+      >
+        {{ t('libredbStudio.setup.title') }}
+      </router-link>
     </Banner>
     <Banner
       v-if="found > 1"
