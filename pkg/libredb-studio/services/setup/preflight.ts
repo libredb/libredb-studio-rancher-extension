@@ -6,7 +6,7 @@ import {
   canI, findAllIfVisible, findIfVisible, kubeGet, LOCAL_CLUSTER
 } from './k8s';
 import {
-  CHART_NAME, DEFAULT_REPO, OIDC_CLIENT_SECRETS_NAMESPACE, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  CHART_NAME, DEFAULT_REPO, OIDC_CLIENT_SECRETS_NAMESPACE, RECORD_CONFIGMAP, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import {
   ChartVersion, MIN_APP_VERSION, MIN_CHART_VERSION, oidcScopes, pickChartVersion, rancherLine
@@ -173,7 +173,7 @@ export async function chartCheck(store: StoreLike, repoName: string): Promise<{ 
   };
 }
 
-async function installedCheck(store: StoreLike): Promise<Check> {
+async function installedCheck(store: StoreLike, cluster: string): Promise<Check> {
   if (store.getters['cluster/schemaFor'](APP)) {
     try {
       await store.dispatch('cluster/find', { type: APP, id: `${ STUDIO_NAMESPACE }/${ RELEASE_NAME }` });
@@ -188,7 +188,18 @@ async function installedCheck(store: StoreLike): Promise<Check> {
 
   const { link } = selectStudioLink(await findStudioLinks(store));
 
-  return link ? check('installed', 'error', 'linked', { namespace: link.namespace }) : check('installed', 'ok', 'ok');
+  if (link) {
+    return check('installed', 'error', 'linked', { namespace: link.namespace });
+  }
+
+  // A record without an app is what a failed uninstall leaves; Settings removes it
+  try {
+    const record = await kubeGet(store, cluster, `/api/v1/namespaces/${ STUDIO_NAMESPACE }/configmaps/${ RECORD_CONFIGMAP }`);
+
+    return record ? check('installed', 'error', 'leftover', { namespace: STUDIO_NAMESPACE, name: RECORD_CONFIGMAP }) : check('installed', 'ok', 'ok');
+  } catch {
+    return check('installed', 'error', 'unknown');
+  }
 }
 
 /**
@@ -287,7 +298,7 @@ export async function runPreflight(store: StoreLike, cluster: string, repoName =
     ingress.length ? check('ingressClass', 'ok', 'ok', { name: ingress[0] }) : check('ingressClass', 'error', 'none'),
     storage.length ? check('storageClass', 'ok', 'ok', { name: names(storage)[0] }) : check('storageClass', 'error', 'none'),
     studioNamespace.check,
-    await installedCheck(store),
+    await installedCheck(store, cluster),
     chart.check,
     ...sso.checks,
   ];

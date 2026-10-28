@@ -269,6 +269,20 @@ describe('setup preflight', () => {
           id: 'installed', state: 'error', reason: 'unknown'
         });
     });
+
+    it('sends a cluster owner to Settings when an earlier setup left its record behind', async() => {
+      const leftover = withRequest(`GET /k8s/clusters/${ CLUSTER }/api/v1/namespaces/libredb-studio/configmaps/libredb-studio-setup`, { metadata: { name: 'libredb-studio-setup' } });
+
+      expect(byId((await run(leftover)).checks).installed).toStrictEqual({
+        id: 'installed', state: 'error', reason: 'leftover', args: { namespace: 'libredb-studio', name: 'libredb-studio-setup' }
+      });
+    });
+
+    it('cannot tell when the record cannot be read', async() => {
+      const broken = withRequest(`GET /k8s/clusters/${ CLUSTER }/api/v1/namespaces/libredb-studio/configmaps/libredb-studio-setup`, httpError(500));
+
+      expect(byId((await run(broken)).checks).installed.reason).toBe('unknown');
+    });
   });
 
   describe('chart', () => {

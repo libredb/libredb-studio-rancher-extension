@@ -1,7 +1,7 @@
 import type { StoreLike } from '../../services/types';
 
-/** A failed store request, shaped as the dashboard store rejects one */
-export function httpError(status: number, message = `HTTP ${ status }`): Error & { _status: number, data: { message: string } } {
+/** A failed store request, shaped as the dashboard store rejects one; the message is what the server said */
+export function httpError(status: number, message = ''): Error & { _status: number, data: { message: string } } {
   return Object.assign(new Error(message), { _status: status, data: { message } });
 }
 
