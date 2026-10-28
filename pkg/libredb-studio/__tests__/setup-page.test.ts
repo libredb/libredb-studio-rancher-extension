@@ -397,6 +397,88 @@ describe('setup page', () => {
       expect(wrapper.find('[data-testid="libredb-setup-form"]').exists()).toBe(true);
     });
 
+    // The shell's Banner and fields escape their label themselves, and text interpolation would show an
+    // escape t made as it is, so every banner and field label asks t for raw text; sub-labels,
+    // tooltips and radio labels render HTML and take t's escaped text.
+    it('asks t for raw text for every banner and field label, before, during and after the install', async() => {
+      const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+      const labels: string[] = [];
+      const collect = (wrapper: VueWrapper) => labels.push(...[BannerStub, ...['LabeledInput', 'LabeledSelect', 'RadioGroup', 'Checkbox'].map((name) => ({ name }))]
+        .flatMap((component) => wrapper.findAllComponents(component as typeof BannerStub).map((found) => found.props('label') as string)));
+      const run = async(preflight: PreflightResult, ...steps: Record<string, unknown>[]) => {
+        preflightMock.mockResolvedValue(preflight);
+        const wrapper = mount(Setup, {
+          global: {
+            mocks: {
+              t: raw, $store: { getters: {}, dispatch: jest.fn() }, $route: { params: { cluster: 'c-m-1' } }
+            },
+            stubs: {
+              Banner: BannerStub, Loading: true, LabeledInput: fieldStub('LabeledInput'), LabeledSelect: fieldStub('LabeledSelect'), RadioGroup: fieldStub('RadioGroup'), Checkbox: fieldStub('Checkbox'), RouterLink: RouterLinkStub, SetupChecks: true
+            },
+          },
+        });
+
+        await flushPromises();
+        collect(wrapper);
+
+        if (steps.length) {
+          for (const values of steps) {
+            await fill(wrapper, values);
+            collect(wrapper);
+          }
+          await wrapper.find('form').trigger('submit');
+          await flushPromises();
+          collect(wrapper);
+        }
+      };
+
+      await run({ ...PREFLIGHT, canInstall: false });
+      succeed({ link: undefined });
+      await run(PREFLIGHT, {
+        ...VALID, 'libredb-setup-sso': false, 'libredb-setup-tls': 'cert-manager'
+      }, { 'libredb-setup-cluster-issuer': 'letsencrypt' });
+      installMock.mockResolvedValue({
+        ok: false, failure: { reason: 'timeout' }, undone: []
+      });
+      await run(PREFLIGHT, VALID);
+
+      expect([...new Set(labels)].sort()).toStrictEqual([
+        'libredbStudio.setup.blocked', 'libredbStudio.setup.doneLocal', 'libredbStudio.setup.failed', 'libredbStudio.setup.form.clusterIssuer', 'libredbStudio.setup.form.host',
+        'libredbStudio.setup.form.ingressClass', 'libredbStudio.setup.form.localSignIn', 'libredbStudio.setup.form.namespaces', 'libredbStudio.setup.form.sso',
+        'libredbStudio.setup.form.ssoTrust', 'libredbStudio.setup.form.tlsSecretName', 'libredbStudio.setup.form.tlsTitle',
+      ]);
+      expect(raw.mock.calls.filter((call) => labels.includes(call[0]) && call[2] !== true)).toStrictEqual([]);
+    });
+
+    it('shows the apostrophe of the banner that says how to sign in without single sign-on', async() => {
+      succeed({ link: undefined });
+      const apostrophe = (key: string, _args?: unknown, isRaw?: boolean) => {
+        if (key !== 'libredbStudio.setup.doneLocal') {
+          return key;
+        }
+
+        return isRaw ? 'listed to Studio\'s admin only' : 'listed to Studio&#39;s admin only';
+      };
+      const wrapper = mount(Setup, {
+        global: {
+          mocks: {
+            t: apostrophe, $store: { getters: {}, dispatch: jest.fn() }, $route: { params: { cluster: 'c-m-1' } }
+          },
+          stubs: {
+            Loading: true, LabeledInput: fieldStub('LabeledInput'), LabeledSelect: fieldStub('LabeledSelect'), RadioGroup: fieldStub('RadioGroup'), Checkbox: fieldStub('Checkbox'), RouterLink: RouterLinkStub, SetupChecks: true
+          },
+        },
+      });
+
+      await flushPromises();
+      await fill(wrapper, { ...VALID, 'libredb-setup-sso': false });
+      await wrapper.find('form').trigger('submit');
+      await flushPromises();
+
+      // The shell's own Banner, which escapes its label before it renders it as HTML
+      expect(wrapper.find('[data-testid="libredb-setup-done"]').text()).toContain('listed to Studio\'s admin only');
+    });
+
     it('reports an install that broke off before any step could say why', async() => {
       installMock.mockRejectedValue(new Error('chunk failed to load'));
       const wrapper = render();

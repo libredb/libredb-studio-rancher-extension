@@ -8,7 +8,8 @@ import type { ShellResource } from '../services/open';
 
 const NAVLINK = { metadata: { name: 'studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } };
 
-const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args ? JSON.stringify(args) : '' }`;
+// Arguments show as JSON, none as nothing; whether a text was asked for raw is checked on its own
+const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args && Object.keys(args).length ? JSON.stringify(args) : '' }`;
 
 type Answer = boolean | 'error' | 'never';
 
@@ -170,5 +171,34 @@ describe('LibreDB Studio masthead panel', () => {
     expect(open).not.toHaveBeenCalled();
     expect(wrapper.find('[data-testid="libredb-panel-open"]').attributes('disabled')).toBeUndefined();
     expect(wrapper.find('[data-testid="libredb-panel-open-failed"]').text()).toBe('%libredbStudio.databases.reason.failed%{"secret":"orders-app","namespace":"team-a"}');
+  });
+});
+
+// The shell's t escapes HTML unless asked for raw, and text interpolation would show that escape as
+// it is, an apostrophe as &#39;, so everything the panel shows is asked for raw text.
+describe('LibreDB Studio masthead panel messages', () => {
+  it('asks t for raw text for its title, its labels, Open and every reason', async() => {
+    const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+    const show = (cluster: string, allowed: Answer) => {
+      const { resource } = setup(cluster, { allowed, navlinks: [NAVLINK] });
+
+      return mount(StudioPanel, { props: { resource }, global: { mocks: { t: raw } } });
+    };
+
+    show('c-raw-pending', 'never');
+    show('c-raw-denied', false);
+    show('c-raw-failed', 'error');
+    const allowed = show('c-raw-allowed', true);
+
+    await settle();
+    jest.spyOn(openService, 'openDatabase').mockRejectedValueOnce(new Error('Loading chunk studio-link failed'));
+    await allowed.find('[data-testid="libredb-panel-open"]').trigger('click');
+    await flushPromises();
+
+    expect([...new Set(raw.mock.calls.map((call) => call[0]))].sort()).toStrictEqual([
+      'libredbStudio.databases.open', 'libredbStudio.databases.reason.denied', 'libredbStudio.databases.reason.failed', 'libredbStudio.databases.reason.pending',
+      'libredbStudio.panel.database', 'libredbStudio.panel.host', 'libredbStudio.panel.title', 'libredbStudio.panel.user',
+    ]);
+    expect(raw.mock.calls.filter((call) => call[2] !== true)).toStrictEqual([]);
   });
 });

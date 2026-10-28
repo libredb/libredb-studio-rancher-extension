@@ -165,7 +165,7 @@ export default defineComponent({
       >
         <Banner
           color="warning"
-          :label="t('libredbStudio.setup.blocked')"
+          :label="t('libredbStudio.setup.blocked', {}, true)"
         />
         <button
           type="button"
@@ -193,7 +193,7 @@ export default defineComponent({
         <LabeledInput
           v-model:value="form.host"
           class="mb-10"
-          :label="t('libredbStudio.setup.form.host')"
+          :label="t('libredbStudio.setup.form.host', {}, true)"
           :sub-label="t('libredbStudio.setup.form.hostHelp')"
           :required="true"
           data-testid="libredb-setup-host"
@@ -201,7 +201,7 @@ export default defineComponent({
         <LabeledSelect
           v-model:value="form.ingressClassName"
           class="mb-10"
-          :label="t('libredbStudio.setup.form.ingressClass')"
+          :label="t('libredbStudio.setup.form.ingressClass', {}, true)"
           :options="preflight.ingressClasses"
           data-testid="libredb-setup-ingress-class"
         />
@@ -209,7 +209,7 @@ export default defineComponent({
           v-model:value="form.tlsSource"
           class="mb-10"
           name="libredb-setup-tls"
-          :label="t('libredbStudio.setup.form.tlsTitle')"
+          :label="t('libredbStudio.setup.form.tlsTitle', {}, true)"
           :options="tlsOptions"
           :labels="tlsLabels"
           data-testid="libredb-setup-tls"
@@ -218,7 +218,7 @@ export default defineComponent({
           v-if="form.tlsSource === 'secret'"
           v-model:value="form.tlsSecretName"
           class="mb-10"
-          :label="t('libredbStudio.setup.form.tlsSecretName')"
+          :label="t('libredbStudio.setup.form.tlsSecretName', {}, true)"
           :sub-label="tlsSecretHelp"
           data-testid="libredb-setup-tls-secret"
         />
@@ -226,7 +226,7 @@ export default defineComponent({
           v-else
           v-model:value="form.clusterIssuer"
           class="mb-10"
-          :label="t('libredbStudio.setup.form.clusterIssuer')"
+          :label="t('libredbStudio.setup.form.clusterIssuer', {}, true)"
           :options="preflight.clusterIssuers"
           data-testid="libredb-setup-cluster-issuer"
         />
@@ -234,7 +234,7 @@ export default defineComponent({
           v-model:value="form.namespaces"
           class="mb-10"
           :multiple="true"
-          :label="t('libredbStudio.setup.form.namespaces')"
+          :label="t('libredbStudio.setup.form.namespaces', {}, true)"
           :tooltip="t('libredbStudio.setup.form.namespacesHelp')"
           :options="preflight.namespaces"
           data-testid="libredb-setup-namespaces"
@@ -263,7 +263,7 @@ export default defineComponent({
           v-if="!form.sso"
           color="info"
           data-testid="libredb-setup-local-sign-in"
-          :label="t('libredbStudio.setup.form.localSignIn')"
+          :label="t('libredbStudio.setup.form.localSignIn', {}, true)"
         />
         <ul
           v-if="showErrors && errorReasons.length"
@@ -296,7 +296,7 @@ export default defineComponent({
         >
           <Banner
             color="success"
-            :label="t(withSso ? 'libredbStudio.setup.doneSso' : 'libredbStudio.setup.doneLocal', { namespace })"
+            :label="t(withSso ? 'libredbStudio.setup.doneSso' : 'libredbStudio.setup.doneLocal', { namespace }, true)"
           />
           <a
             v-if="result.link"
@@ -320,7 +320,7 @@ export default defineComponent({
         >
           <Banner
             color="error"
-            :label="t('libredbStudio.setup.failed')"
+            :label="t('libredbStudio.setup.failed', {}, true)"
           />
           <p
             v-if="!result.failedStep && result.failure"

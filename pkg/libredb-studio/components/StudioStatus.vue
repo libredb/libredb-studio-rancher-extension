@@ -55,7 +55,7 @@ export default defineComponent({
       :color="color"
       data-testid="libredb-studio-status"
     >
-      <span>{{ t(`libredbStudio.status.${ status }`, { namespace: link?.namespace }) }}</span>
+      <span>{{ t(`libredbStudio.status.${ status }`, { namespace: link?.namespace }, true) }}</span>
       <a
         v-if="link"
         :href="link.toURL"
@@ -63,21 +63,21 @@ export default defineComponent({
         rel="noopener noreferrer nofollow"
         class="ml-10"
         data-testid="libredb-studio-link"
-      >{{ t('libredbStudio.status.open') }}</a>
+      >{{ t('libredbStudio.status.open', {}, true) }}</a>
       <router-link
         v-else-if="status === 'not-set-up' && setupRoute"
         :to="setupRoute"
         class="ml-10"
         data-testid="libredb-studio-setup"
       >
-        {{ t('libredbStudio.setup.title') }}
+        {{ t('libredbStudio.setup.title', {}, true) }}
       </router-link>
     </Banner>
     <Banner
       v-if="found > 1"
       color="info"
       data-testid="libredb-studio-several-links"
-      :label="t('libredbStudio.status.severalLinks', { count: found, name: link?.name })"
+      :label="t('libredbStudio.status.severalLinks', { count: found, name: link?.name }, true)"
     />
   </div>
 </template>
