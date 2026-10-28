@@ -3,7 +3,7 @@ import {
 } from '../services/setup/versions';
 import { chartValues, parseRecord, serializeRecord, SetupRecord } from '../services/setup/values';
 import {
-  STUDIO_NAMESPACE, RELEASE_NAME, CHART_NAME, OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, oidcClientName
+  STUDIO_NAMESPACE, RELEASE_NAME, CHART_NAME, OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, CHART_REPO, chartRepo, oidcClientName
 } from '../services/setup/names';
 
 describe('versions', () => {
@@ -101,6 +101,13 @@ describe('names', () => {
     expect(OIDC_SECRET).toBe('libredb-studio-oidc');
     expect(RANCHER_CA_CONFIGMAP).toBe('libredb-studio-rancher-ca');
     expect(RECORD_CONFIGMAP).toBe('libredb-studio-setup');
+  });
+
+  it('installs and upgrades from Rancher\'s Partners repository only, unless a development build names another', () => {
+    expect(CHART_REPO).toBe('rancher-partner-charts');
+    expect(chartRepo(undefined)).toBe('rancher-partner-charts');
+    expect(chartRepo('')).toBe('rancher-partner-charts');
+    expect(chartRepo('rl-lab-charts')).toBe('rl-lab-charts');
   });
 
   it('names the OIDC client after the cluster', () => {

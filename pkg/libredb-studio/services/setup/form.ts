@@ -1,6 +1,6 @@
 import type { SetupPlan } from './install';
 import {
-  CERT_MANAGER_TLS_SECRET, CHART_NAME, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  CERT_MANAGER_TLS_SECRET, CHART_NAME, CHART_REPO, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import type { PreflightResult } from './preflight';
 import type { SetupRecord, TlsChoice } from './values';
@@ -103,7 +103,7 @@ export function planFrom(cluster: string, preflight: PreflightResult, form: Setu
     version: 1,
     cluster,
     release: {
-      namespace: STUDIO_NAMESPACE, name: RELEASE_NAME, repo: preflight.repo, chart: CHART_NAME, chartVersion: (preflight.chart as ChartVersion).version
+      namespace: STUDIO_NAMESPACE, name: RELEASE_NAME, repo: CHART_REPO, chart: CHART_NAME, chartVersion: (preflight.chart as ChartVersion).version
     },
     host:             normalizeHost(form.host),
     ingressClassName: form.ingressClassName,

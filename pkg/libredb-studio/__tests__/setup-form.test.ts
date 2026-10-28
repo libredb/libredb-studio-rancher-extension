@@ -1,7 +1,7 @@
 import {
   initialForm, namespacesError, normalizeHost, planFrom, validateForm, SetupForm
 } from '../services/setup/form';
-import { summarize, withChart, PreflightResult } from '../services/setup/preflight';
+import { summarize, PreflightResult } from '../services/setup/preflight';
 import { RANCHER_CA } from './helpers/cluster';
 
 const PREFLIGHT: PreflightResult = {
@@ -25,7 +25,6 @@ const PREFLIGHT: PreflightResult = {
   ingressClasses:  ['traefik', 'nginx'],
   clusterIssuers:  ['letsencrypt'],
   namespaces:      ['team-a', 'team-b', 'team-c'],
-  repos:           ['rancher-partner-charts', 'mirror'],
   repo:            'rancher-partner-charts',
   chart:           { version: '0.1.110', appVersion: '1.2.0' },
   namespaceExists: false,
@@ -121,6 +120,10 @@ describe('setup form', () => {
     expect(validateForm({ ...FORM, sso: false }, { ...PREFLIGHT, canUseSso: false })).toStrictEqual({});
   });
 
+  it('installs from the extension\'s own repository, whatever the preflight read', () => {
+    expect(planFrom('c-m-1', { ...PREFLIGHT, repo: 'mirror' }, FORM).record.release.repo).toBe('rancher-partner-charts');
+  });
+
   it('plans Rancher mode with single sign-on from the form and the preflight', () => {
     expect(planFrom('c-m-1', PREFLIGHT, FORM)).toStrictEqual({
       cluster: 'c-m-1',
@@ -174,26 +177,5 @@ describe('preflight summary', () => {
     }, {
       id: 'oidcClient', state: 'error', reason: 'exists', sso: true
     }])).toStrictEqual({ canInstall: true });
-  });
-
-  it('takes another repository\'s chart into the result', () => {
-    const tooOld = {
-      check: {
-        id: 'chart' as const, state: 'error' as const, reason: 'tooOld'
-      }
-    };
-    const fine = {
-      check: {
-        id: 'chart' as const, state: 'ok' as const, reason: 'ok'
-      },
-      chart: { version: '0.1.111', appVersion: '1.2.1' }
-    };
-
-    expect(withChart(PREFLIGHT, 'mirror', tooOld)).toMatchObject({
-      repo: 'mirror', chart: undefined, canInstall: false, checks: [PREFLIGHT.checks[0], tooOld.check, PREFLIGHT.checks[2]]
-    });
-    expect(withChart(PREFLIGHT, 'mirror', fine)).toMatchObject({
-      repo: 'mirror', chart: fine.chart, canInstall: true
-    });
   });
 });

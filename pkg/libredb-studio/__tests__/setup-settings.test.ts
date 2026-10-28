@@ -48,6 +48,8 @@ const CONTEXT: RancherContext = {
   serverUrl: 'https://rancher.example.com', serverVersion: 'v2.15.2', scopes: ['openid', 'profile', 'groups'], cacerts: RANCHER_CA
 };
 const HOST = 'studio.example.com';
+/** What the administrator saw and confirmed before single sign-on */
+const CONFIRMED = { host: HOST, namespaces: ['team-a'] };
 
 type Answers = [string | RegExp, unknown][];
 
@@ -154,6 +156,7 @@ describe('the setup record', () => {
     expect(recordProblem({ ...RECORD, release: { ...RECORD.release, name: 'other' } }, CLUSTER)).toBe('release');
     expect(recordProblem({ ...RECORD, release: { ...RECORD.release, chart: 'other' } }, CLUSTER)).toBe('release');
     expect(recordProblem({ ...RECORD, sso: { ...SSO, client: 'rancher-ai' } }, CLUSTER)).toBe('client');
+    expect(recordProblem({ ...RECORD, release: { ...RECORD.release, repo: 'someone-elses-charts' } }, CLUSTER)).toBe('repo');
   });
 
   describe('a record someone changed', () => {
@@ -166,6 +169,7 @@ describe('the setup record', () => {
         }
       }, 'release'],
       ['another OIDC client', { ...SSO_RECORD, sso: { ...SSO, client: 'some-other-client' } }, 'client'],
+      ['another chart repository', { ...SSO_RECORD, release: { ...RECORD.release, repo: 'someone-elses-charts' } }, 'repo'],
     ];
 
     it.each(forged)('naming %s steers no action', async(_, record, field) => {
@@ -175,7 +179,7 @@ describe('the setup record', () => {
       };
 
       await expect(saveNamespaces(store, CLUSTER, record, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(refused);
-      await expect(enableSso(store, CLUSTER, record, APP_INFO, CONTEXT, HOST, options())).resolves.toStrictEqual(refused);
+      await expect(enableSso(store, CLUSTER, record, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(refused);
       await expect(uninstallStudio(store, CLUSTER, record, record.release.name, options())).resolves.toStrictEqual(refused);
       expect(store.calls).toStrictEqual([]);
     });
@@ -305,6 +309,15 @@ describe('changing the discovered namespaces', () => {
     expect(changes(store)).toStrictEqual([]);
   });
 
+  it('refuses a namespace the user cannot see now', async() => {
+    const { store } = installed();
+
+    await expect(saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-a', 'someone-elses'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'badNamespaces' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
   it('keeps the record as it was when the upgrade fails', async() => {
     const { store } = installed({ upgradeStates: ['failed'] });
     const result = await saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-b'], options());
@@ -336,7 +349,7 @@ describe('turning single sign-on on', () => {
   it('registers Studio with Rancher, copies the credentials and the CA, upgrades Studio, then updates the record', async() => {
     const { store, kube } = installed();
     const run = options();
-    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, HOST, run);
+    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, run);
 
     expect(result).toStrictEqual({
       ok: true, undone: [], record: SSO_RECORD
@@ -353,17 +366,35 @@ describe('turning single sign-on on', () => {
   it('sends Rancher\'s users back to the host Studio serves, never to the one the record names', async() => {
     const record = { ...RECORD, host: 'phish.example.net' };
     const { store } = installed({ record });
-    const result = await enableSso(store, CLUSTER, record, APP_INFO, CONTEXT, HOST, options());
+    const result = await enableSso(store, CLUSTER, record, APP_INFO, CONTEXT, CONFIRMED, options());
 
     expect(result.ok).toBe(true);
     expect(bodyOf(store, `POST ${ LOCAL }/apis/management.cattle.io/v3/oidcclients`)).toMatchObject({ spec: { redirectURIs: ['https://studio.example.com/api/auth/oidc/callback'] } });
     expect(result.record?.host).toBe(HOST);
   });
 
+  it('carries forward only the namespaces the administrator confirmed, not the ones the record names', async() => {
+    const record = { ...RECORD, namespaces: ['team-a', 'kube-system'] };
+    const { store } = installed({ record });
+    const result = await enableSso(store, CLUSTER, record, APP_INFO, CONTEXT, CONFIRMED, options());
+
+    expect(result.record?.namespaces).toStrictEqual(['team-a']);
+    expect(bodyOf(store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ values: { discovery: { kubernetes: { namespaces: ['team-a'] } } } }] });
+  });
+
+  it('refuses confirmed namespaces the administrator cannot see now', async() => {
+    const { store } = installed();
+
+    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, { host: HOST, namespaces: ['someone-elses'] }, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'badNamespaces' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
   it('acts only on the redirect the administrator confirmed', async() => {
     const { store } = installed({ ingressHost: 'moved.example.com' });
 
-    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, HOST, options())).resolves.toStrictEqual({
+    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual({
       ok: false, failure: { reason: 'hostChanged', args: { host: 'moved.example.com' } }, undone: []
     });
     expect(changes(store)).toStrictEqual([]);
@@ -372,7 +403,7 @@ describe('turning single sign-on on', () => {
   it('refuses without a host it can read from Studio\'s Ingress', async() => {
     const { store } = installed({ override: [[`GET ${ INGRESS }`, { spec: { rules: [{ host: 'evil@example.com' }] } }]] });
 
-    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, HOST, options())).resolves.toStrictEqual({
+    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual({
       ok: false, failure: { reason: 'noHost' }, undone: []
     });
     expect(changes(store)).toStrictEqual([]);
@@ -380,7 +411,7 @@ describe('turning single sign-on on', () => {
 
   it('copies no CA when Rancher has none of its own', async() => {
     const { store } = installed();
-    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, { ...CONTEXT, cacerts: undefined }, HOST, options());
+    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, { ...CONTEXT, cacerts: undefined }, CONFIRMED, options());
 
     expect(result.record?.sso?.rancherCA).toBe(false);
     expect(lines(store)).not.toContain(`POST ${ NS }/configmaps`);
@@ -389,7 +420,7 @@ describe('turning single sign-on on', () => {
   it('refuses without Rancher\'s server URL', async() => {
     const { store } = installed();
 
-    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, { ...CONTEXT, serverUrl: undefined }, HOST, options())).resolves.toStrictEqual({
+    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, { ...CONTEXT, serverUrl: undefined }, CONFIRMED, options())).resolves.toStrictEqual({
       ok: false, failure: { reason: 'ssoUnavailable' }, undone: []
     });
     expect(store.calls).toStrictEqual([]);
@@ -398,7 +429,7 @@ describe('turning single sign-on on', () => {
   it('puts the previous values back and removes what it created when the upgrade fails', async() => {
     const { store } = installed({ upgradeStates: ['failed', 'deployed'] });
     const run = options();
-    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, HOST, run);
+    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, run);
 
     expect(result).toMatchObject({
       ok: false, failedStep: 'upgrade', failure: { reason: 'helmFailed' }
@@ -415,7 +446,7 @@ describe('turning single sign-on on', () => {
   });
 
   it('keeps the credentials while Studio may still use them, when the previous values cannot be put back', async() => {
-    const result = await enableSso(installed({ upgradeStates: ['failed', 'failed'] }).store, CLUSTER, RECORD, APP_INFO, CONTEXT, HOST, options());
+    const result = await enableSso(installed({ upgradeStates: ['failed', 'failed'] }).store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options());
 
     expect(result.undone).toStrictEqual([
       {
@@ -435,7 +466,7 @@ describe('turning single sign-on on', () => {
 
   it('removes the OIDC client when the credentials cannot be copied, and upgrades nothing', async() => {
     const { store } = installed({ override: [[`POST ${ NS }/secrets`, httpError(403)]] });
-    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, HOST, options());
+    const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options());
 
     expect(result).toMatchObject({
       ok: false, failedStep: 'oidcSecret', undone: [{ undo: 'oidcClient', outcome: 'removed' }]
@@ -444,7 +475,7 @@ describe('turning single sign-on on', () => {
   });
 
   it('removes nothing when Studio is upgraded but the record cannot be updated', async() => {
-    const result = await enableSso(installed({ override: [[`PUT ${ RECORD_PATH }`, httpError(500)]] }).store, CLUSTER, RECORD, APP_INFO, CONTEXT, HOST, options());
+    const result = await enableSso(installed({ override: [[`PUT ${ RECORD_PATH }`, httpError(500)]] }).store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options());
 
     expect(result).toMatchObject({
       ok: false, failedStep: 'saveRecord', undone: []

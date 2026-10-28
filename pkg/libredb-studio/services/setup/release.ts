@@ -3,7 +3,7 @@ import type { StoreLike } from '../types';
 import { StepFailure } from './failure';
 import { kube, kubeGet } from './k8s';
 import {
-  CHART_NAME, MANAGED_LABELS, RELEASE_NAME, STUDIO_NAMESPACE, isManaged
+  CHART_NAME, CHART_REPO, MANAGED_LABELS, RELEASE_NAME, STUDIO_NAMESPACE, isManaged
 } from './names';
 import { chartValues, SetupRecord } from './values';
 import { waitFor, WaitOptions } from './wait';
@@ -55,21 +55,22 @@ export function sourceAnnotations(repo: string): Record<string, string> {
   };
 }
 
-async function chartAction(store: StoreLike, cluster: string, repo: string, action: 'install' | 'upgrade', body: unknown): Promise<Operation> {
+/** Always on the extension's own repository: a record never chooses where a chart comes from */
+async function chartAction(store: StoreLike, cluster: string, action: 'install' | 'upgrade', body: unknown): Promise<Operation> {
   const started = await kube<{ operationName?: string, operationNamespace?: string } | undefined>(store, cluster, 'post',
-    `/v1/catalog.cattle.io.clusterrepos/${ encodeURIComponent(repo) }?action=${ action }`, body);
+    `/v1/catalog.cattle.io.clusterrepos/${ encodeURIComponent(CHART_REPO) }?action=${ action }`, body);
 
   return { name: started?.operationName || '', namespace: started?.operationNamespace || '' };
 }
 
 /** Starts installing our chart in Rancher mode */
 export function installRelease(store: StoreLike, cluster: string, record: SetupRecord): Promise<Operation> {
-  return chartAction(store, cluster, record.release.repo, 'install', {
+  return chartAction(store, cluster, 'install', {
     charts: [{
       chartName:   CHART_NAME,
       version:     record.release.chartVersion,
       releaseName: record.release.name,
-      annotations: sourceAnnotations(record.release.repo),
+      annotations: sourceAnnotations(CHART_REPO),
       values:      chartValues(record),
     }],
     namespace: record.release.namespace,
@@ -85,12 +86,12 @@ export function installRelease(store: StoreLike, cluster: string, record: SetupR
  * release's values, so they are always the whole set the record gives.
  */
 export function upgradeRelease(store: StoreLike, cluster: string, record: SetupRecord, chartVersion: string): Promise<Operation> {
-  return chartAction(store, cluster, record.release.repo, 'upgrade', {
+  return chartAction(store, cluster, 'upgrade', {
     charts: [{
       chartName:   CHART_NAME,
       version:     chartVersion,
       releaseName: record.release.name,
-      annotations: sourceAnnotations(record.release.repo),
+      annotations: sourceAnnotations(CHART_REPO),
       values:      chartValues(record),
       resetValues: false,
     }],

@@ -3,17 +3,14 @@ import { defineComponent, h } from 'vue';
 import Setup from '../pages/Setup.vue';
 import SetupChecks from '../components/SetupChecks.vue';
 import StepList from '../components/StepList.vue';
-import { chartCheck, runPreflight, PreflightResult } from '../services/setup/preflight';
+import { runPreflight, PreflightResult } from '../services/setup/preflight';
 import { installStudio, InstallOptions, InstallResult } from '../services/setup/install';
 import { RANCHER_CA } from './helpers/cluster';
 
-jest.mock('../services/setup/preflight', () => ({
-  ...jest.requireActual('../services/setup/preflight'), runPreflight: jest.fn(), chartCheck: jest.fn()
-}));
+jest.mock('../services/setup/preflight', () => ({ ...jest.requireActual('../services/setup/preflight'), runPreflight: jest.fn() }));
 jest.mock('../services/setup/install', () => ({ ...jest.requireActual('../services/setup/install'), installStudio: jest.fn() }));
 
 const preflightMock = runPreflight as jest.Mock;
-const chartCheckMock = chartCheck as jest.Mock;
 const installMock = installStudio as jest.Mock;
 
 const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args ? JSON.stringify(args) : '' }`;
@@ -47,7 +44,6 @@ const PREFLIGHT: PreflightResult = {
   ingressClasses:  ['traefik', 'nginx'],
   clusterIssuers:  ['letsencrypt'],
   namespaces:      ['team-a', 'team-b'],
-  repos:           ['rancher-partner-charts', 'mirror'],
   repo:            'rancher-partner-charts',
   chart:           { version: '0.1.110', appVersion: '1.2.0' },
   namespaceExists: false,
@@ -106,7 +102,6 @@ const VALID = { 'libredb-setup-host': 'studio.example.com', 'libredb-setup-names
 describe('setup page', () => {
   beforeEach(() => {
     preflightMock.mockReset().mockResolvedValue(PREFLIGHT);
-    chartCheckMock.mockReset();
     installMock.mockReset();
   });
 
@@ -158,7 +153,6 @@ describe('setup page', () => {
       value: [], options: ['team-a', 'team-b'], multiple: true
     });
     expect(field(wrapper, 'libredb-setup-sso').props()).toMatchObject({ value: true, disabled: false });
-    expect(field(wrapper, 'libredb-setup-repo').props()).toMatchObject({ value: 'rancher-partner-charts', options: ['rancher-partner-charts', 'mirror'] });
     expect(wrapper.find('[data-testid="libredb-setup-local-sign-in"]').exists()).toBe(false);
   });
 
@@ -196,30 +190,12 @@ describe('setup page', () => {
     expect(wrapper.find('[data-testid="libredb-setup-errors"]').text()).toContain('%libredbStudio.setup.form.errors.namespaces%');
   });
 
-  it('checks another repository when the cluster owner picks a mirror', async() => {
-    chartCheckMock.mockResolvedValue({
-      check: {
-        id: 'chart', state: 'error', reason: 'noChart', args: { repo: 'mirror' }
-      }
-    });
+  it('offers no choice of chart repository', async() => {
     const wrapper = render();
 
     await flushPromises();
-    await fill(wrapper, { 'libredb-setup-repo': 'mirror' });
 
-    expect(chartCheckMock).toHaveBeenCalledWith(expect.anything(), 'mirror');
-    expect(wrapper.find('[data-testid="libredb-check-chart"]').text()).toContain('%libredbStudio.setup.checks.chart.noChart%');
-    expect(wrapper.find('[data-testid="libredb-setup-blocked"]').exists()).toBe(true);
-  });
-
-  it('keeps the install button off while another repository is being checked', async() => {
-    chartCheckMock.mockReturnValue(new Promise(() => undefined));
-    const wrapper = render();
-
-    await flushPromises();
-    await fill(wrapper, { 'libredb-setup-repo': 'mirror' });
-
-    expect(wrapper.find('[data-testid="libredb-setup-install"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('[data-testid="libredb-setup-repo"]').exists()).toBe(false);
   });
 
   describe('installing', () => {

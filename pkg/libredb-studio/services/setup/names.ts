@@ -8,8 +8,19 @@ export const STUDIO_NAMESPACE = 'libredb-studio';
 export const RELEASE_NAME = 'libredb-studio';
 export const CHART_NAME = 'libredb-studio';
 
-/** The ClusterRepo the wizard installs from unless the cluster owner picks a mirror */
+/** Rancher's Partners chart repository, where our partner chart reaches every Rancher */
 export const DEFAULT_REPO = 'rancher-partner-charts';
+
+/**
+ * The only ClusterRepo the extension installs and upgrades from, never one a record names. A
+ * development or lab build may name another at build time (VUE_APP_LIBREDB_DEV_REPO, inlined by
+ * the build); a release build does not.
+ */
+export function chartRepo(devRepo: string | undefined): string {
+  return devRepo || DEFAULT_REPO;
+}
+
+export const CHART_REPO = chartRepo(process.env.VUE_APP_LIBREDB_DEV_REPO);
 
 /** The Secret that holds only the OIDC client id and secret, under the chart's default keys */
 export const OIDC_SECRET = 'libredb-studio-oidc';

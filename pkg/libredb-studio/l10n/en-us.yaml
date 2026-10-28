@@ -97,7 +97,6 @@ libredbStudio:
       namespacesHelp: Studio lists the CloudNativePG databases of these namespaces, each one only to the people who may read its credential Secret.
       sso: Sign in with Rancher (single sign-on)
       localSignIn: Without single sign-on, Studio keeps its own sign-in, and lists the discovered databases to its admin only. A Rancher administrator can turn single sign-on on later from Settings.
-      repo: Chart repository
       install: Install
       errors:
         host: Enter a host name such as studio.example.com, without a scheme, a port, a path or a wildcard.
@@ -115,6 +114,8 @@ libredbStudio:
       record: Record the setup
       install: Install the chart and wait for it
       ready: Wait for LibreDB Studio and its link
+      upgrade: Upgrade LibreDB Studio and wait for it
+      saveRecord: Update the setup record
     state:
       pending: Waiting
       running: Running
@@ -123,6 +124,7 @@ libredbStudio:
       failed: Failed
     undo:
       release: The LibreDB Studio app
+      upgrade: The settings LibreDB Studio had
       navLink: The link in the cluster's navigation
       record: The setup record
       rancherCA: Rancher's CA
@@ -133,6 +135,7 @@ libredbStudio:
       removed: removed
       gone: already gone
       kept: kept
+      restored: put back
       failed: could not be removed
     failure:
       request: 'Rancher answered the request with an error: {detail}'
@@ -146,5 +149,16 @@ libredbStudio:
       notReady: LibreDB Studio or its link did not become ready in time.
       releaseLeft: Kept because the app could not be removed.
       notEmpty: Kept because something else lives in it.
+      notManaged: Kept because it does not carry this extension's labels, so the extension did not create it or someone changed it; a cluster owner can remove it by hand.
+      notOurs: Kept because the setup did not create it.
+      notAllowed: Kept because deleting the OIDC client {name} needs a Rancher administrator or the global role Manage OIDC Clients; it is left behind for them.
+      retryLater: Kept so that Settings can finish the uninstall later.
+      upgradeLeft: Kept because LibreDB Studio may still run with single sign-on.
+      untrustedRecord: The setup record does not match this cluster and this extension ({field}), so Settings does not act on it. Someone may have changed it; a cluster owner can check the ConfigMap libredb-studio-setup.
+      noHost: The host name of LibreDB Studio could not be read from its Ingress.
+      hostChanged: LibreDB Studio now serves {host}; check the address again before you confirm.
+      ssoUnavailable: Single sign-on is not available here.
+      notConfirmed: Type the release name to confirm.
+      badNamespaces: The namespaces to discover must be at least one and at most 256 namespaces you can see in this cluster now.
 product:
   libredb: LibreDB Studio

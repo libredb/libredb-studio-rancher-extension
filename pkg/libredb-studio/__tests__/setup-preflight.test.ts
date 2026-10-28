@@ -2,9 +2,7 @@ import { fakeStore, httpError, reviewAnswer, FakeStoreSetup } from './helpers/fa
 import {
   CLUSTER, CNPG_LIST_RULE, INDEX_URL, RANCHER_CA, SSAR_DOWN, SSAR_LOCAL, ownerOnly, readyCluster, reviewOf
 } from './helpers/cluster';
-import {
-  aggregationCheck, chartCheck, runPreflight, Check, CheckId
-} from '../services/setup/preflight';
+import { aggregationCheck, runPreflight, Check, CheckId } from '../services/setup/preflight';
 
 const byId = (checks: Check[]) => Object.fromEntries(checks.map((check) => [check.id, check])) as Record<CheckId, Check>;
 
@@ -36,7 +34,6 @@ describe('setup preflight', () => {
       ingressClasses:  ['traefik', 'nginx'],
       clusterIssuers:  ['letsencrypt'],
       namespaces:      ['kube-system', 'team-a', 'team-b'],
-      repos:           ['rancher-partner-charts', 'mirror', 'rancher-charts'],
       repo:            'rancher-partner-charts',
       chart:           { version: '0.1.110', appVersion: '1.2.0' },
       namespaceExists: false,
@@ -331,25 +328,13 @@ describe('setup preflight', () => {
       expect(byId((await run(setup)).checks).chart.reason).toBe('unreadable');
     });
 
-    it('checks another repository on request, such as a mirror', async() => {
-      const setup = withFind('cluster/catalog.cattle.io.clusterrepo/mirror', { metadata: { name: 'mirror' }, links: { index: '/mirror-index' } },
-        withRequest('GET /mirror-index', { entries: { 'libredb-studio': [{ version: '0.1.111', appVersion: '1.2.1' }] } }));
+    it('reads the extension\'s own repository only', async() => {
+      const store = fakeStore(readyCluster());
 
-      await expect(chartCheck(fakeStore(setup), 'mirror')).resolves.toStrictEqual({
-        check: {
-          id:     'chart',
-          state:  'ok',
-          reason: 'ok',
-          args:   {
-            repo: 'mirror', version: '0.1.111', appVersion: '1.2.1'
-          }
-        },
-        chart: { version: '0.1.111', appVersion: '1.2.1' },
-      });
-    });
+      await runPreflight(store, CLUSTER);
 
-    it('lists the repositories with the Partners one first, and none without the schema', async() => {
-      expect((await run(withoutSchema('cluster/catalog.cattle.io.clusterrepo'))).repos).toStrictEqual([]);
+      expect(store.dispatch.mock.calls.filter(([action, payload]: [string, { type?: string }]) => action === 'cluster/find' && payload.type === 'catalog.cattle.io.clusterrepo'))
+        .toStrictEqual([['cluster/find', { type: 'catalog.cattle.io.clusterrepo', id: 'rancher-partner-charts' }]]);
     });
   });
 

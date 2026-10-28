@@ -5,10 +5,10 @@ import {
   removeNamespace, removeNavLink, removeOidcClient, removeOidcSecret, removeRancherCA, removeRecord, removeRelease, undoCreated, UndoEvent, UndoId
 } from './cleanup';
 import { Failure, failureOf } from './failure';
-import { isHostName } from './form';
+import { isHostName, namespacesError } from './form';
 import { canI, findAllIfVisible, kubeGet, LOCAL_CLUSTER } from './k8s';
 import {
-  CHART_NAME, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  CHART_NAME, CHART_REPO, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import { copyClientSecret, createOidcClient, waitForClientId } from './oidc-client';
 import {
@@ -87,6 +87,11 @@ export function recordProblem(record: SetupRecord, cluster: string): string | un
     return 'release';
   }
 
+  // Charts come only from the extension's own repository
+  if (release.repo !== CHART_REPO) {
+    return 'repo';
+  }
+
   return record.sso && record.sso.client !== oidcClientName(cluster) ? 'client' : undefined;
 }
 
@@ -101,6 +106,13 @@ export async function deployedHost(store: StoreLike, cluster: string): Promise<s
   } catch {
     return undefined;
   }
+}
+
+/** The namespaces discovery may cover, as the acting user sees them now */
+async function visibleNamespaces(store: StoreLike): Promise<string[]> {
+  const namespaces = await findAllIfVisible<{ metadata: { name: string } }>(store, 'namespace');
+
+  return namespaces.map((item) => item.metadata.name).filter((name) => name !== STUDIO_NAMESPACE).sort((a, b) => a.localeCompare(b));
 }
 
 function refused(reason: string, args?: Record<string, string>): ChangeResult {
@@ -122,7 +134,6 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
   const problem = record && recordProblem(record, cluster);
   const state = await releaseState(store, cluster, STUDIO_NAMESPACE, RELEASE_NAME);
   const { link } = selectStudioLink(await findStudioLinks(store));
-  const namespaces = await findAllIfVisible<{ metadata: { name: string } }>(store, 'namespace');
   let sso: StudioSettings['sso'];
 
   if (record && !record.sso && !problem) {
@@ -143,7 +154,7 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
     link,
     status:      await studioStatus(store, link),
     aggregation: await aggregationCheck(store),
-    namespaces:  namespaces.map((item) => item.metadata.name).filter((name) => name !== STUDIO_NAMESPACE).sort((a, b) => a.localeCompare(b)),
+    namespaces:  await visibleNamespaces(store),
     sso,
   };
 }
@@ -161,6 +172,11 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
 
   if (problem) {
     return refused('untrustedRecord', { field: problem });
+  }
+
+  // Revalidated against what the user sees now, never taken on trust
+  if (namespacesError(namespaces, await visibleNamespaces(store))) {
+    return refused('badNamespaces');
   }
 
   const host = await deployedHost(store, cluster);
@@ -226,7 +242,13 @@ async function compensate(store: StoreLike, cluster: string, record: SetupRecord
  * Turns single sign-on on for a Studio installed with its own sign-in (design section 6.7): steps 5
  * to 8 of the setup as an upgrade, which needs a Rancher administrator.
  */
-export async function enableSso(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, context: RancherContext, confirmedHost: string, options: ChangeOptions = {}): Promise<ChangeResult> {
+/** What the administrator saw and confirmed before single sign-on: the redirect's host and the namespaces */
+export interface SsoConfirmation {
+  host: string;
+  namespaces: string[];
+}
+
+export async function enableSso(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, context: RancherContext, confirmed: SsoConfirmation, options: ChangeOptions = {}): Promise<ChangeResult> {
   const problem = recordProblem(record, cluster);
 
   if (problem) {
@@ -244,9 +266,19 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
     return refused('noHost');
   }
 
-  if (host !== confirmedHost) {
+  if (host !== confirmed.host) {
     return refused('hostChanged', { host });
   }
+
+  // The namespaces the administrator confirmed, revalidated, never the record's carried forward
+  if (namespacesError(confirmed.namespaces, await visibleNamespaces(store))) {
+    return refused('badNamespaces');
+  }
+
+  const namespaces = [...new Set(confirmed.namespaces)].sort((a, b) => a.localeCompare(b));
+  const previous: SetupRecord = {
+    ...record, host, namespaces, sso: undefined
+  };
 
   const sso: SsoRecord = {
     client:    oidcClientName(cluster),
@@ -255,7 +287,7 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
     rancherCA: !!context.cacerts,
   };
   const changed: SetupRecord = {
-    ...record, host, sso
+    ...record, host, namespaces, sso
   };
   const created: UndoId[] = [];
   let clientId = '';
@@ -305,7 +337,7 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
   let undone: UndoEvent[] = [];
 
   if (failed.step !== 'saveRecord') {
-    undone = upgradeStarted ? await compensate(store, cluster, record, changed, app, created, options) : await undoCreated(store, cluster, changed, created, options);
+    undone = upgradeStarted ? await compensate(store, cluster, previous, changed, app, created, options) : await undoCreated(store, cluster, changed, created, options);
   }
 
   return {

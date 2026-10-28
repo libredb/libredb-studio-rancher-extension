@@ -12,7 +12,7 @@ import { failureOf } from '../services/setup/failure';
 import { initialForm, planFrom, validateForm } from '../services/setup/form';
 import { installStudio, plannedSteps } from '../services/setup/install';
 import { STUDIO_NAMESPACE } from '../services/setup/names';
-import { chartCheck, runPreflight, withChart } from '../services/setup/preflight';
+import { runPreflight } from '../services/setup/preflight';
 import type { FormErrors, SetupForm } from '../services/setup/form';
 import type { InstallResult, StepView, UndoEvent } from '../services/setup/install';
 import type { PreflightResult } from '../services/setup/preflight';
@@ -31,16 +31,15 @@ export default defineComponent({
 
   data() {
     return {
-      preflight:    undefined as PreflightResult | undefined,
-      form:         undefined as SetupForm | undefined,
-      phase:        'form' as 'form' | 'running' | 'done' | 'failed',
-      showErrors:   false,
-      changingRepo: false,
-      steps:        [] as StepView[],
-      undone:       [] as UndoEvent[],
-      result:       undefined as InstallResult | undefined,
-      withSso:      false,
-      namespace:    STUDIO_NAMESPACE,
+      preflight:  undefined as PreflightResult | undefined,
+      form:       undefined as SetupForm | undefined,
+      phase:      'form' as 'form' | 'running' | 'done' | 'failed',
+      showErrors: false,
+      steps:      [] as StepView[],
+      undone:     [] as UndoEvent[],
+      result:     undefined as InstallResult | undefined,
+      withSso:    false,
+      namespace:  STUDIO_NAMESPACE,
     };
   },
 
@@ -83,15 +82,6 @@ export default defineComponent({
       return runPreflight(this.$store as StoreLike, this.cluster).then((preflight) => {
         this.preflight = preflight;
         this.form = initialForm(preflight);
-      });
-    },
-
-    changeRepo(repo: string): Promise<void> {
-      this.changingRepo = true;
-
-      return chartCheck(this.$store as StoreLike, repo).then((found) => {
-        this.preflight = withChart(this.preflight as PreflightResult, repo, found);
-        this.changingRepo = false;
       });
     },
 
@@ -227,15 +217,6 @@ export default defineComponent({
           data-testid="libredb-setup-local-sign-in"
           :label="t('libredbStudio.setup.form.localSignIn')"
         />
-        <LabeledSelect
-          :value="preflight.repo"
-          class="mb-10"
-          :label="t('libredbStudio.setup.form.repo')"
-          :options="preflight.repos"
-          :disabled="changingRepo"
-          data-testid="libredb-setup-repo"
-          @update:value="changeRepo"
-        />
         <ul
           v-if="showErrors && errorReasons.length"
           class="text-error"
@@ -251,7 +232,6 @@ export default defineComponent({
         <button
           type="submit"
           class="btn role-primary"
-          :disabled="changingRepo"
           data-testid="libredb-setup-install"
         >
           {{ t('libredbStudio.setup.form.install') }}

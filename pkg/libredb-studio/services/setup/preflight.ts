@@ -6,7 +6,7 @@ import {
   canI, findAllIfVisible, findIfVisible, kubeGet, LOCAL_CLUSTER
 } from './k8s';
 import {
-  CHART_NAME, DEFAULT_REPO, OIDC_CLIENT_SECRETS_NAMESPACE, RECORD_CONFIGMAP, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  CHART_NAME, CHART_REPO, OIDC_CLIENT_SECRETS_NAMESPACE, RECORD_CONFIGMAP, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import {
   ChartVersion, MIN_APP_VERSION, MIN_CHART_VERSION, oidcScopes, pickChartVersion, rancherLine
@@ -45,8 +45,7 @@ export interface PreflightResult {
   clusterIssuers: string[];
   /** The namespaces discovery may cover, Studio's own left out */
   namespaces: string[];
-  /** The cluster's chart repositories, the Partners one first */
-  repos: string[];
+  /** The extension's own chart repository */
   repo: string;
   chart?: ChartVersion;
   namespaceExists: boolean;
@@ -290,31 +289,23 @@ export function summarize(checks: Check[]): { canInstall: boolean } {
   return { canInstall: !checks.some((item) => !item.sso && item.state === 'error') };
 }
 
-/** The preflight with another repository's chart check, when the cluster owner picks a mirror */
-export function withChart(preflight: PreflightResult, repo: string, found: { check: Check, chart?: ChartVersion }): PreflightResult {
-  const checks = preflight.checks.map((item) => (item.id === 'chart' ? found.check : item));
-
-  return {
-    ...preflight, ...summarize(checks), checks, repo, chart: found.chart
-  };
-}
-
 /** Everything F6 checks before it offers the install, read as the signed-in user */
-export async function runPreflight(store: StoreLike, cluster: string, repoName = DEFAULT_REPO): Promise<PreflightResult> {
+export async function runPreflight(store: StoreLike, cluster: string): Promise<PreflightResult> {
+  const repoName = CHART_REPO;
   const owner = await canI(store, cluster, {
     verb: '*', group: '*', resource: '*'
   });
 
   if (!owner) {
     return {
-      checks: [check('owner', 'error', 'notOwner')], canInstall: false, canUseSso: false, scopes: [], ingressClasses: [], clusterIssuers: [], namespaces: [], repos: [], repo: repoName, namespaceExists: false
+      checks: [check('owner', 'error', 'notOwner')], canInstall: false, canUseSso: false, scopes: [], ingressClasses: [], clusterIssuers: [], namespaces: [], repo: repoName, namespaceExists: false
     };
   }
 
   const {
     serverVersion, serverUrl, cacerts, scopes
   } = await rancherContext(store);
-  const [ingressClasses, storageClasses, clusterIssuers, namespaces, repos] = await Promise.all([INGRESS_CLASS, STORAGE_CLASS, CLUSTER_ISSUER, 'namespace', CLUSTER_REPO]
+  const [ingressClasses, storageClasses, clusterIssuers, namespaces] = await Promise.all([INGRESS_CLASS, STORAGE_CLASS, CLUSTER_ISSUER, 'namespace']
     .map((type) => findAllIfVisible<Named>(store, type)));
   const ingress = defaultFirst(ingressClasses, (item) => annotated(item, ['ingressclass.kubernetes.io/is-default-class']));
   const storage = storageClasses.filter((item) => annotated(item, ['storageclass.kubernetes.io/is-default-class', 'storageclass.beta.kubernetes.io/is-default-class']));
@@ -346,7 +337,6 @@ export async function runPreflight(store: StoreLike, cluster: string, repoName =
     ingressClasses:  ingress,
     clusterIssuers:  names(clusterIssuers),
     namespaces:      names(namespaces).filter((name) => name !== STUDIO_NAMESPACE),
-    repos:           defaultFirst(repos, (item) => item.metadata.name === DEFAULT_REPO),
     repo:            repoName,
     chart:           chart.chart,
     namespaceExists: studioNamespace.exists,
