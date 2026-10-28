@@ -1,0 +1,26 @@
+# Publishes the extension chart to the gh-pages Helm repository. Every published GitHub release
+# triggers it, but the job runs only for a tag libredb-studio-<pkg version>, also when started by
+# hand from that tag ref; a catalog tag skips it and a pull request never runs it.
+
+name: Build and Release Extension Charts
+
+on:
+  workflow_dispatch:
+  release:
+    types: [released]
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./
+
+jobs:
+  build-extension-charts:
+    if: startsWith(github.ref_name, 'libredb-studio-') && !startsWith(github.ref_name, 'libredb-studio-rancher-extension-')
+    uses: rancher/dashboard/.github/workflows/build-extension-charts.yml@8ded74ce753910cb3c12bbb72a6c02c5ca0ab68c # master 2026-10-27
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      target_branch: gh-pages
+      tagged_release: ${{ github.ref_name }}
