@@ -1,0 +1,43 @@
+/**
+ * The names the setup wizard (F6) and the settings page (F7) give what they create. One Studio
+ * serves one cluster, so they are fixed rather than chosen.
+ */
+
+/** Studio's namespace, outside every project, so project members cannot read its Secrets */
+export const STUDIO_NAMESPACE = 'libredb-studio';
+export const RELEASE_NAME = 'libredb-studio';
+export const CHART_NAME = 'libredb-studio';
+
+/** The ClusterRepo the wizard installs from unless the cluster owner picks a mirror */
+export const DEFAULT_REPO = 'rancher-partner-charts';
+
+/** The Secret that holds only the OIDC client id and secret, under the chart's default keys */
+export const OIDC_SECRET = 'libredb-studio-oidc';
+export const OIDC_CLIENT_ID_KEY = 'oidc-client-id';
+export const OIDC_CLIENT_SECRET_KEY = 'oidc-client-secret';
+
+/** Rancher's CA, from the cacerts setting, for Studio's server-to-server calls to Rancher */
+export const RANCHER_CA_CONFIGMAP = 'libredb-studio-rancher-ca';
+export const RANCHER_CA_KEY = 'ca.crt';
+
+/** The wizard's inputs, which the settings page rebuilds Studio's values from */
+export const RECORD_CONFIGMAP = 'libredb-studio-setup';
+export const RECORD_KEY = 'setup.json';
+
+/** The certificate Secret cert-manager writes for a ClusterIssuer */
+export const CERT_MANAGER_TLS_SECRET = 'libredb-studio-tls';
+
+/** Rancher keeps every OIDC client's secrets in this namespace of its local cluster */
+export const OIDC_CLIENT_SECRETS_NAMESPACE = 'cattle-oidc-client-secrets';
+export const OIDC_CLIENT_SECRET_SOURCE_KEY = 'client-secret-1';
+
+/** On every object the wizard creates */
+export const MANAGED_LABELS: Record<string, string> = {
+  'app.kubernetes.io/managed-by': 'libredb-studio-rancher-extension',
+  'app.kubernetes.io/part-of':    'libredb-studio',
+};
+
+/** One OIDC client per cluster, on Rancher's local cluster */
+export function oidcClientName(cluster: string): string {
+  return `libredb-studio-${ cluster }`;
+}
