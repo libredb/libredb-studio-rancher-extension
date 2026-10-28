@@ -1,5 +1,5 @@
 import {
-  initialForm, normalizeHost, planFrom, validateForm, SetupForm
+  initialForm, namespacesError, normalizeHost, planFrom, validateForm, SetupForm
 } from '../services/setup/form';
 import { summarize, withChart, PreflightResult } from '../services/setup/preflight';
 import { RANCHER_CA } from './helpers/cluster';
@@ -108,6 +108,12 @@ describe('setup form', () => {
     const many = Array.from({ length: 257 }, (_, i) => `ns-${ i }`);
 
     expect(validateForm({ ...FORM, namespaces: many }, { ...PREFLIGHT, namespaces: many })).toStrictEqual({ namespaces: 'tooManyNamespaces' });
+  });
+
+  it('checks a namespace list on its own, as Settings does', () => {
+    expect(namespacesError(['team-a', 'team-a'], ['team-a'])).toBeUndefined();
+    expect(namespacesError([], ['team-a'])).toBe('namespaces');
+    expect(namespacesError(['team-x'], ['team-a'])).toBe('namespaces');
   });
 
   it('refuses single sign-on the preflight did not allow', () => {

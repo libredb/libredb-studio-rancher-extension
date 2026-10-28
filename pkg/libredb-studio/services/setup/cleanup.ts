@@ -1,7 +1,9 @@
 import type { StoreLike } from '../types';
 import { Failure, failureOf } from './failure';
-import { kubeDelete, LOCAL_CLUSTER } from './k8s';
-import { OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, STUDIO_NAMESPACE } from './names';
+import { kubeDelete, kubeGet, LOCAL_CLUSTER } from './k8s';
+import {
+  OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, STUDIO_NAMESPACE, isManaged
+} from './names';
 import { oidcClientPath } from './oidc-client';
 import { namespaceIsEmpty, uninstallRelease } from './release';
 import type { SetupRecord, SsoRecord } from './values';
@@ -27,43 +29,67 @@ function event(undo: UndoId, outcome: UndoOutcome, failure?: Failure): UndoEvent
   } : { undo, outcome };
 }
 
-async function removal(undo: UndoId, remove: () => Promise<boolean>, secret = false): Promise<UndoEvent> {
+/** notEmpty: a namespace something else still lives in */
+type Removal = 'removed' | 'gone' | 'notManaged' | 'notEmpty';
+
+const KEPT: Record<string, Failure> = {
+  notManaged: { reason: 'notManaged' },
+  notEmpty:   { reason: 'notEmpty', args: { namespace: STUDIO_NAMESPACE } },
+};
+
+async function removal(undo: UndoId, remove: () => Promise<Removal>, secret = false): Promise<UndoEvent> {
   try {
-    return event(undo, await remove() ? 'removed' : 'gone');
+    const result = await remove();
+
+    return KEPT[result] ? event(undo, 'kept', KEPT[result]) : event(undo, result as UndoOutcome);
   } catch (err) {
     return event(undo, 'failed', failureOf(err, { secret }));
   }
 }
 
+/**
+ * Deletes an object only when it carries the extension's labels, so a record someone edited can
+ * never steer the extension into deleting what it did not create.
+ */
+async function deleteManaged(store: StoreLike, cluster: string, path: string): Promise<Removal> {
+  const found = await kubeGet<{ metadata?: { labels?: Record<string, string> } }>(store, cluster, path);
+
+  if (!found) {
+    return 'gone';
+  }
+
+  if (!isManaged(found.metadata?.labels)) {
+    return 'notManaged';
+  }
+
+  return await kubeDelete(store, cluster, path) ? 'removed' : 'gone';
+}
+
 const inStudio = (path: string) => `/api/v1/namespaces/${ STUDIO_NAMESPACE }${ path }`;
 
 export function removeRecord(store: StoreLike, cluster: string): Promise<UndoEvent> {
-  return removal('record', () => kubeDelete(store, cluster, inStudio(`/configmaps/${ RECORD_CONFIGMAP }`)));
+  return removal('record', () => deleteManaged(store, cluster, inStudio(`/configmaps/${ RECORD_CONFIGMAP }`)));
 }
 
 export function removeRancherCA(store: StoreLike, cluster: string): Promise<UndoEvent> {
-  return removal('rancherCA', () => kubeDelete(store, cluster, inStudio(`/configmaps/${ RANCHER_CA_CONFIGMAP }`)));
+  return removal('rancherCA', () => deleteManaged(store, cluster, inStudio(`/configmaps/${ RANCHER_CA_CONFIGMAP }`)));
 }
 
 export function removeOidcSecret(store: StoreLike, cluster: string): Promise<UndoEvent> {
-  return removal('oidcSecret', () => kubeDelete(store, cluster, inStudio(`/secrets/${ OIDC_SECRET }`)), true);
+  return removal('oidcSecret', () => deleteManaged(store, cluster, inStudio(`/secrets/${ OIDC_SECRET }`)), true);
 }
 
 /** Helm removes the chart's NavLink with the app; one left behind goes too */
 export function removeNavLink(store: StoreLike, cluster: string, name: string): Promise<UndoEvent> {
-  return removal('navLink', () => kubeDelete(store, cluster, `/apis/ui.cattle.io/v1/navlinks/${ encodeURIComponent(name) }`));
+  return removal('navLink', () => deleteManaged(store, cluster, `/apis/ui.cattle.io/v1/navlinks/${ encodeURIComponent(name) }`));
 }
 
 export function removeOidcClient(store: StoreLike, name: string): Promise<UndoEvent> {
-  return removal('oidcClient', () => kubeDelete(store, LOCAL_CLUSTER, oidcClientPath(name)));
+  return removal('oidcClient', () => deleteManaged(store, LOCAL_CLUSTER, oidcClientPath(name)));
 }
 
-export async function removeRelease(store: StoreLike, cluster: string, namespace: string, name: string, options: WaitOptions): Promise<UndoEvent> {
-  try {
-    return event('release', await uninstallRelease(store, cluster, namespace, name, options));
-  } catch (err) {
-    return event('release', 'failed', failureOf(err));
-  }
+export function removeRelease(store: StoreLike, cluster: string, namespace: string, name: string, options: WaitOptions): Promise<UndoEvent> {
+  return removal('release', () => uninstallRelease(store, cluster, namespace, name, options));
 }
 
 /**
@@ -77,11 +103,20 @@ export async function removeNamespace(store: StoreLike, cluster: string, release
     return event('namespace', 'kept', { reason: 'releaseLeft', args });
   }
 
-  if (!await namespaceIsEmpty(store, cluster, STUDIO_NAMESPACE)) {
-    return event('namespace', 'kept', { reason: 'notEmpty', args });
-  }
+  return removal('namespace', async() => {
+    const path = `/api/v1/namespaces/${ STUDIO_NAMESPACE }`;
+    const found = await kubeGet<{ metadata?: { labels?: Record<string, string> } }>(store, cluster, path);
 
-  return removal('namespace', () => kubeDelete(store, cluster, `/api/v1/namespaces/${ STUDIO_NAMESPACE }`));
+    if (!found || !isManaged(found.metadata?.labels)) {
+      return found ? 'notManaged' : 'gone';
+    }
+
+    if (!await namespaceIsEmpty(store, cluster, STUDIO_NAMESPACE)) {
+      return 'notEmpty';
+    }
+
+    return await kubeDelete(store, cluster, path) ? 'removed' : 'gone';
+  });
 }
 
 /** Removes, newest first, what a run created, each reported as it goes */
@@ -93,7 +128,7 @@ export async function undoCreated(store: StoreLike, cluster: string, record: Set
     rancherCA:  () => removeRancherCA(store, cluster),
     oidcSecret: () => removeOidcSecret(store, cluster),
     oidcClient: () => removeOidcClient(store, (record.sso as SsoRecord).client),
-    namespace:  () => removeNamespace(store, cluster, undone.some((item) => item.undo === 'release' && item.outcome === 'failed')),
+    namespace:  () => removeNamespace(store, cluster, undone.some((item) => item.undo === 'release' && (item.outcome === 'failed' || item.outcome === 'kept'))),
   };
 
   for (const id of [...created].reverse()) {

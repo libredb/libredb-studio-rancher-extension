@@ -31,11 +31,19 @@ export const CERT_MANAGER_TLS_SECRET = 'libredb-studio-tls';
 export const OIDC_CLIENT_SECRETS_NAMESPACE = 'cattle-oidc-client-secrets';
 export const OIDC_CLIENT_SECRET_SOURCE_KEY = 'client-secret-1';
 
-/** On every object the wizard creates */
+/**
+ * On every object the wizard creates, as labels, and on the chart it installs, as annotations; the
+ * extension deletes nothing that does not carry them.
+ */
 export const MANAGED_LABELS: Record<string, string> = {
   'app.kubernetes.io/managed-by': 'libredb-studio-rancher-extension',
   'app.kubernetes.io/part-of':    'libredb-studio',
 };
+
+/** Whether labels or annotations carry the extension's mark */
+export function isManaged(marks: Record<string, string> | undefined): boolean {
+  return Object.entries(MANAGED_LABELS).every(([key, value]) => marks?.[key] === value);
+}
 
 /** One OIDC client per cluster, on Rancher's local cluster */
 export function oidcClientName(cluster: string): string {

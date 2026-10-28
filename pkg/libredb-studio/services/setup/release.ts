@@ -2,7 +2,9 @@ import { StudioLink, usableToURL } from '../navlink';
 import type { StoreLike } from '../types';
 import { StepFailure } from './failure';
 import { kube, kubeGet } from './k8s';
-import { CHART_NAME, RELEASE_NAME, STUDIO_NAMESPACE } from './names';
+import {
+  CHART_NAME, MANAGED_LABELS, RELEASE_NAME, STUDIO_NAMESPACE, isManaged
+} from './names';
 import { chartValues, SetupRecord } from './values';
 import { waitFor, WaitOptions } from './wait';
 
@@ -18,7 +20,11 @@ export interface Operation {
 }
 
 interface App {
-  spec?: { version?: number, info?: { status?: string }, chart?: { metadata?: { version?: string, appVersion?: string } } };
+  spec?: {
+    version?: number,
+    info?: { status?: string },
+    chart?: { metadata?: { name?: string, version?: string, appVersion?: string, annotations?: Record<string, string> } },
+  };
   status?: { summary?: { state?: string } };
 }
 
@@ -39,9 +45,14 @@ const READY_POLL_MS = 2000;
 
 const appPath = (namespace: string, name: string) => `/apis/catalog.cattle.io/v1/namespaces/${ namespace }/apps/${ name }`;
 
-/** The annotations Rancher's Apps page sets, so the app shows where it came from */
+/**
+ * The chart annotations Rancher writes into the release: where it came from, as Rancher's Apps page
+ * sets them, and the extension's mark, without which the extension never uninstalls a release.
+ */
 export function sourceAnnotations(repo: string): Record<string, string> {
-  return { 'catalog.cattle.io/ui-source-repo-type': 'cluster', 'catalog.cattle.io/ui-source-repo': repo };
+  return {
+    'catalog.cattle.io/ui-source-repo-type': 'cluster', 'catalog.cattle.io/ui-source-repo': repo, ...MANAGED_LABELS
+  };
 }
 
 async function chartAction(store: StoreLike, cluster: string, repo: string, action: 'install' | 'upgrade', body: unknown): Promise<Operation> {
@@ -140,10 +151,19 @@ export async function waitForRelease(store: StoreLike, cluster: string, record: 
   }
 }
 
-/** Uninstalls the release and waits until it is gone: removed, or gone when there was none */
-export async function uninstallRelease(store: StoreLike, cluster: string, namespace: string, name: string, options: WaitOptions): Promise<'removed' | 'gone'> {
-  if (!await kubeGet(store, cluster, appPath(namespace, name))) {
+/**
+ * Uninstalls the release and waits until it is gone: removed, gone when there was none, or
+ * notManaged for a release without the extension's mark, which is left as it is.
+ */
+export async function uninstallRelease(store: StoreLike, cluster: string, namespace: string, name: string, options: WaitOptions): Promise<'removed' | 'gone' | 'notManaged'> {
+  const app = await kubeGet<App>(store, cluster, appPath(namespace, name));
+
+  if (!app) {
     return 'gone';
+  }
+
+  if (!isManaged(app.spec?.chart?.metadata?.annotations)) {
+    return 'notManaged';
   }
 
   const started = await kube<{ operationName?: string, operationNamespace?: string } | undefined>(store, cluster, 'post',

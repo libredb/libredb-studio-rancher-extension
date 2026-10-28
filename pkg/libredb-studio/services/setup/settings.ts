@@ -5,9 +5,10 @@ import {
   removeNamespace, removeNavLink, removeOidcClient, removeOidcSecret, removeRancherCA, removeRecord, removeRelease, undoCreated, UndoEvent, UndoId
 } from './cleanup';
 import { Failure, failureOf } from './failure';
-import { canI, findAllIfVisible, LOCAL_CLUSTER } from './k8s';
+import { isHostName } from './form';
+import { canI, findAllIfVisible, kubeGet, LOCAL_CLUSTER } from './k8s';
 import {
-  RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  CHART_NAME, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import { copyClientSecret, createOidcClient, waitForClientId } from './oidc-client';
 import {
@@ -40,6 +41,10 @@ export interface StudioSettings {
   record?: SetupRecord;
   /** The record is there but is not one this version wrote */
   recordUnreadable: boolean;
+  /** What makes the record untrustworthy here, so that no action follows it */
+  recordProblem?: string;
+  /** The host Studio's Ingress serves, the only host a change or a redirect takes */
+  host?: string;
   app?: AppInfo;
   link?: StudioLink;
   status?: StudioStatus;
@@ -66,6 +71,44 @@ export interface ChangeResult {
   record?: SetupRecord;
 }
 
+/**
+ * Why a record must not steer an action, or nothing. Anyone who can edit Studio's namespace can edit
+ * the record, so an administrator's action on it stays on this cluster, on the release the
+ * extension installs, and on the OIDC client it would create here.
+ */
+export function recordProblem(record: SetupRecord, cluster: string): string | undefined {
+  if (record.cluster !== cluster) {
+    return 'cluster';
+  }
+
+  const { release } = record;
+
+  if (release.namespace !== STUDIO_NAMESPACE || release.name !== RELEASE_NAME || release.chart !== CHART_NAME) {
+    return 'release';
+  }
+
+  return record.sso && record.sso.client !== oidcClientName(cluster) ? 'client' : undefined;
+}
+
+/** The host Studio's Ingress serves, when it is a bare host name; never the record's */
+export async function deployedHost(store: StoreLike, cluster: string): Promise<string | undefined> {
+  try {
+    const ingress = await kubeGet<{ spec?: { rules?: { host?: string }[] } }>(store, cluster,
+      `/apis/networking.k8s.io/v1/namespaces/${ STUDIO_NAMESPACE }/ingresses/${ RELEASE_NAME }`);
+    const host = ingress?.spec?.rules?.[0]?.host || '';
+
+    return isHostName(host) ? host : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function refused(reason: string, args?: Record<string, string>): ChangeResult {
+  return {
+    ok: false, failure: args ? { reason, args } : { reason }, undone: []
+  };
+}
+
 export async function loadSettings(store: StoreLike, cluster: string): Promise<StudioSettings> {
   if (!await canI(store, cluster, {
     verb: '*', group: '*', resource: '*'
@@ -76,13 +119,13 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
   }
 
   const { exists, record } = await readRecord(store, cluster);
-  const release = record?.release || { namespace: STUDIO_NAMESPACE, name: RELEASE_NAME };
-  const state = await releaseState(store, cluster, release.namespace, release.name);
+  const problem = record && recordProblem(record, cluster);
+  const state = await releaseState(store, cluster, STUDIO_NAMESPACE, RELEASE_NAME);
   const { link } = selectStudioLink(await findStudioLinks(store));
   const namespaces = await findAllIfVisible<{ metadata: { name: string } }>(store, 'namespace');
   let sso: StudioSettings['sso'];
 
-  if (record && !record.sso) {
+  if (record && !record.sso && !problem) {
     const context = await rancherContext(store);
 
     sso = { ...await ssoChecks(store, cluster, context.serverUrl), context };
@@ -92,6 +135,8 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
     canChange:        true,
     record,
     recordUnreadable: exists && !record,
+    recordProblem:    problem,
+    host:             await deployedHost(store, cluster),
     app:              state && {
       chartVersion: state.chartVersion, appVersion: state.appVersion, status: state.status, revision: state.revision
     },
@@ -112,7 +157,21 @@ async function upgradeTo(store: StoreLike, cluster: string, record: SetupRecord,
 
 /** Changes the namespaces Studio discovers */
 export async function saveNamespaces(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, namespaces: string[], options: ChangeOptions = {}): Promise<ChangeResult> {
-  const changed: SetupRecord = { ...record, namespaces: [...new Set(namespaces)].sort((a, b) => a.localeCompare(b)) };
+  const problem = recordProblem(record, cluster);
+
+  if (problem) {
+    return refused('untrustedRecord', { field: problem });
+  }
+
+  const host = await deployedHost(store, cluster);
+
+  if (!host) {
+    return refused('noHost');
+  }
+
+  const changed: SetupRecord = {
+    ...record, host, namespaces: [...new Set(namespaces)].sort((a, b) => a.localeCompare(b))
+  };
   const failed = await runSteps<ChangeStepId>(['upgrade', 'saveRecord'], {
     upgrade: async() => {
       await upgradeTo(store, cluster, changed, app, options);
@@ -167,11 +226,26 @@ async function compensate(store: StoreLike, cluster: string, record: SetupRecord
  * Turns single sign-on on for a Studio installed with its own sign-in (design section 6.7): steps 5
  * to 8 of the setup as an upgrade, which needs a Rancher administrator.
  */
-export async function enableSso(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, context: RancherContext, options: ChangeOptions = {}): Promise<ChangeResult> {
+export async function enableSso(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, context: RancherContext, confirmedHost: string, options: ChangeOptions = {}): Promise<ChangeResult> {
+  const problem = recordProblem(record, cluster);
+
+  if (problem) {
+    return refused('untrustedRecord', { field: problem });
+  }
+
   if (!context.serverUrl) {
-    return {
-      ok: false, failure: { reason: 'ssoUnavailable' }, undone: []
-    };
+    return refused('ssoUnavailable');
+  }
+
+  // The redirect goes to the host Studio serves, which the administrator saw and confirmed
+  const host = await deployedHost(store, cluster);
+
+  if (!host) {
+    return refused('noHost');
+  }
+
+  if (host !== confirmedHost) {
+    return refused('hostChanged', { host });
   }
 
   const sso: SsoRecord = {
@@ -180,7 +254,9 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
     scope:     context.scopes.join(' '),
     rancherCA: !!context.cacerts,
   };
-  const changed: SetupRecord = { ...record, sso };
+  const changed: SetupRecord = {
+    ...record, host, sso
+  };
   const created: UndoId[] = [];
   let clientId = '';
   let upgradeStarted = false;
@@ -244,10 +320,14 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
  * and only when everything before them went, so Settings can finish a later try.
  */
 export async function uninstallStudio(store: StoreLike, cluster: string, record: SetupRecord, confirm: string, options: ChangeOptions = {}): Promise<ChangeResult> {
+  const problem = recordProblem(record, cluster);
+
+  if (problem) {
+    return refused('untrustedRecord', { field: problem });
+  }
+
   if (confirm.trim() !== record.release.name) {
-    return {
-      ok: false, failure: { reason: 'notConfirmed' }, undone: []
-    };
+    return refused('notConfirmed');
   }
 
   const undone: UndoEvent[] = [];
@@ -259,7 +339,8 @@ export async function uninstallStudio(store: StoreLike, cluster: string, record:
 
   note(await removeRelease(store, cluster, record.release.namespace, record.release.name, options));
 
-  if (undone[0].outcome === 'failed') {
+  // An app that could not be uninstalled, or one without the extension's mark, keeps all the rest
+  if (undone[0].outcome === 'failed' || undone[0].outcome === 'kept') {
     return { ok: false, undone };
   }
 

@@ -1,4 +1,5 @@
-import { fakeStore, httpError, FakeStoreSetup } from './helpers/fake-store';
+import { fakeStore, httpError, FakeStoreSetup, Request } from './helpers/fake-store';
+import { FakeKube, KUBE_REQUESTS } from './helpers/kube';
 import { CLUSTER, RANCHER_CA } from './helpers/cluster';
 import {
   installStudio, plannedSteps, SetupPlan, StepEvent, UndoEvent
@@ -59,45 +60,49 @@ const sequence = (...answers: unknown[]) => {
 interface Cluster {
   setup: FakeStoreSetup;
   store: ReturnType<typeof fakeStore>;
+  kube: FakeKube;
 }
 
 type Answers = [string | RegExp, unknown][];
 
+const MANAGED = { 'app.kubernetes.io/managed-by': 'libredb-studio-rancher-extension', 'app.kubernetes.io/part-of': 'libredb-studio' };
+const SOURCE = { 'catalog.cattle.io/ui-source-repo-type': 'cluster', 'catalog.cattle.io/ui-source-repo': 'rancher-partner-charts' };
+
 /**
  * A cluster where every step answers as Rancher does on a good day; `override` answers go first.
- * The app appears, in the Helm state given, once the install is asked for, and leaves once the
- * uninstall is.
+ * Objects live in a fake API server: Rancher gives a new OIDC client its id and writes its secret,
+ * and Helm's app, NavLink and Deployment appear once the install is asked for and leave once the
+ * uninstall is. The app carries the chart annotations the install sent, `annotations` by default.
  */
-function cluster(override: Answers = [], appStatus = 'deployed'): Cluster {
+function cluster(override: Answers = [], appStatus = 'deployed', annotations: Record<string, string> = { ...SOURCE, ...MANAGED }): Cluster {
   const holder = {} as Cluster;
   const asked = (line: string) => holder.store.calls.some((call) => `${ call.method } ${ call.url }` === line);
-  const app = () => {
-    if (asked(`POST ${ UNINSTALL }`) || !asked(`POST ${ INSTALL }`)) {
-      return httpError(404);
-    }
+  const installed = () => asked(`POST ${ INSTALL }`) && !asked(`POST ${ UNINSTALL }`);
+  const app = () => (installed() ? {
+    spec: {
+      version: 1, info: { status: appStatus }, chart: { metadata: { name: 'libredb-studio', annotations } }
+    },
+    status: { summary: { state: appStatus } },
+  } : httpError(404));
 
-    return { spec: { version: 1, info: { status: appStatus } }, status: { summary: { state: appStatus } } };
-  };
-
+  holder.kube = new FakeKube({}, {
+    [CLIENT]: (created, kube) => {
+      Object.assign(created, { status: { clientID: 'client-abc' } });
+      kube.objects.set(CLIENT_SECRET, { metadata: { name: 'client-abc' }, data: { 'client-secret-1': SECRET_B64 } });
+    },
+  });
   holder.setup = {
     requests: [
       ...override,
-      [`GET ${ NS }`, httpError(404)],
-      [`POST ${ K8S }/api/v1/namespaces`, { metadata: { name: 'libredb-studio' } }],
-      [`POST ${ LOCAL }/apis/management.cattle.io/v3/oidcclients`, { metadata: { name: 'libredb-studio-c-m-1' } }],
-      [`GET ${ CLIENT }`, sequence({ metadata: {} }, { metadata: {}, status: { clientID: 'client-abc' } })],
-      [`GET ${ CLIENT_SECRET }`, { data: { 'client-secret-1': SECRET_B64 } }],
-      [`POST ${ NS }/secrets`, {}],
-      [`POST ${ NS }/configmaps`, {}],
       [`POST ${ INSTALL }`, { operationName: 'helm-operation-1', operationNamespace: 'cattle-system' }],
       [`GET ${ APP }`, app],
       [`GET ${ OPERATION }`, { status: { podName: 'helm-operation-1-pod', podNamespace: 'cattle-system' } }],
       [`GET ${ POD }`, { status: { phase: 'Running' } }],
-      [`GET ${ NAVLINK }`, { metadata: { name: 'libredb-studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } }],
-      [`GET ${ DEPLOYMENT }`, { status: { readyReplicas: 1 } }],
+      [`GET ${ NAVLINK }`, () => (installed() ? { metadata: { name: 'libredb-studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } } : httpError(404))],
+      [`GET ${ DEPLOYMENT }`, () => (installed() ? { status: { readyReplicas: 1 } } : httpError(404))],
       [`POST ${ UNINSTALL }`, { operationName: 'helm-operation-2', operationNamespace: 'cattle-system' }],
       [/^GET .*\/namespaces\/libredb-studio\/(apps|deployments|statefulsets|daemonsets|jobs|cronjobs)$/, { items: [] }],
-      [/^DELETE /, {}],
+      [KUBE_REQUESTS, (request: Request) => holder.kube.handle(request)],
     ],
   };
   holder.store = fakeStore(holder.setup);
@@ -129,8 +134,6 @@ const lines = (store: Cluster['store']) => store.calls.map((call) => `${ call.me
 const bodyOf = (store: Cluster['store'], line: string) => store.calls.find((call) => `${ call.method } ${ call.url }` === line)?.data;
 const bodiesOf = (store: Cluster['store'], line: string) => store.calls.filter((call) => `${ call.method } ${ call.url }` === line).map((call) => call.data);
 const states = (run: Run) => run.events.filter((event) => event.state !== 'running').map(({ step, state }) => `${ step }:${ state }`);
-
-const MANAGED = { 'app.kubernetes.io/managed-by': 'libredb-studio-rancher-extension', 'app.kubernetes.io/part-of': 'libredb-studio' };
 
 describe('installing Studio', () => {
   it('plans the single sign-on steps only with single sign-on, and the CA only when Rancher has one', () => {
@@ -234,7 +237,7 @@ describe('installing Studio', () => {
           chartName:   'libredb-studio',
           version:     '0.1.110',
           releaseName: 'libredb-studio',
-          annotations: { 'catalog.cattle.io/ui-source-repo-type': 'cluster', 'catalog.cattle.io/ui-source-repo': 'rancher-partner-charts' },
+          annotations: { ...SOURCE, ...MANAGED },
           values:      chartValues({ ...RECORD, createdNamespace: true }),
         }],
         namespace: 'libredb-studio',
@@ -247,7 +250,7 @@ describe('installing Studio', () => {
     });
 
     it('waits for the client id Rancher assigns', async() => {
-      const target = cluster();
+      const target = cluster([[`GET ${ CLIENT }`, sequence({ metadata: { labels: MANAGED } }, { metadata: { labels: MANAGED }, status: { clientID: 'client-abc' } })]]);
 
       await install(ssoPlan(), target);
 
@@ -303,7 +306,7 @@ describe('installing Studio', () => {
     });
 
     it('removes the OIDC client when Rancher never assigns its id', async() => {
-      const target = cluster([[`GET ${ CLIENT }`, { metadata: {} }]]);
+      const target = cluster([[`GET ${ CLIENT }`, { metadata: { labels: MANAGED } }]]);
       const { result, run } = await install(ssoPlan(), target);
 
       expect(result).toMatchObject({
@@ -499,6 +502,72 @@ describe('installing Studio', () => {
       expect(run.undone[0]).toStrictEqual({ undo: 'record', outcome: 'gone' });
     });
 
+    it('leaves a release without the extension\'s mark, and the namespace it lives in', async() => {
+      const target = cluster([], 'failed', SOURCE);
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone[0]).toStrictEqual({
+        undo: 'release', outcome: 'kept', failure: { reason: 'notManaged' }
+      });
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'releaseLeft', args: { namespace: 'libredb-studio' } }
+      });
+      expect(lines(target.store)).not.toContain(`POST ${ UNINSTALL }`);
+    });
+
+    it('leaves an object that no longer carries the extension\'s labels', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)], [`GET ${ NS }/configmaps/libredb-studio-setup`, { metadata: { labels: { 'app.kubernetes.io/managed-by': 'someone-else' } } }]]);
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone[0]).toStrictEqual({
+        undo: 'record', outcome: 'kept', failure: { reason: 'notManaged' }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }/configmaps/libredb-studio-setup`);
+    });
+
+    it('leaves a namespace that no longer carries the extension\'s labels', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)], [`GET ${ NS }`, sequence(httpError(404), { metadata: { name: 'libredb-studio' } })]]);
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'notManaged' }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
+    });
+
+    describe('when the release it started does not go away', () => {
+      const stuck = {
+        spec: {
+          version: 1, info: { status: 'failed' }, chart: { metadata: { annotations: { ...SOURCE, ...MANAGED } } }
+        }
+      };
+
+      it('gives up on the uninstall in time', async() => {
+        const target = cluster([[`GET ${ APP }`, stuck]]);
+        const { run } = await install(localPlan(), target);
+
+        expect(run.undone[0]).toStrictEqual({
+          undo: 'release', outcome: 'failed', failure: { reason: 'timeout' }
+        });
+        expect(run.undone).toContainEqual({
+          undo: 'namespace', outcome: 'kept', failure: { reason: 'releaseLeft', args: { namespace: 'libredb-studio' } }
+        });
+      });
+
+      it('says when the uninstall\'s Helm operation failed', async() => {
+        const target = cluster([
+          [`GET ${ APP }`, stuck],
+          [`GET ${ K8S }/apis/catalog.cattle.io/v1/namespaces/cattle-system/operations/helm-operation-2`, { status: { podName: 'helm-operation-2-pod' } }],
+          [`GET ${ K8S }/api/v1/namespaces/cattle-system/pods/helm-operation-2-pod`, { status: { phase: 'Failed' } }],
+        ]);
+        const { run } = await install(localPlan(), target);
+
+        expect(run.undone[0]).toStrictEqual({
+          undo: 'release', outcome: 'failed', failure: { reason: 'operationFailed' }
+        });
+      });
+    });
+
     it('keeps the namespace when the release it started cannot be uninstalled', async() => {
       const target = cluster([[`GET ${ NAVLINK }`, httpError(404)], [`POST ${ UNINSTALL }`, httpError(500, 'helm is busy')]]);
       const { run } = await install(localPlan(), target);
@@ -549,7 +618,7 @@ describe('upgrading Studio', () => {
         chartName:   'libredb-studio',
         version:     '0.1.111',
         releaseName: 'libredb-studio',
-        annotations: { 'catalog.cattle.io/ui-source-repo-type': 'cluster', 'catalog.cattle.io/ui-source-repo': 'rancher-partner-charts' },
+        annotations: { ...SOURCE, ...MANAGED },
         values:      chartValues(LOCAL_RECORD),
         resetValues: false,
       }],

@@ -29,6 +29,22 @@ const SUBDOMAIN = new RegExp(`^${ LABEL }(\\.${ LABEL })*$`);
 
 const isSubdomain = (name: string) => name.length <= 253 && SUBDOMAIN.test(name);
 
+/** A bare DNS host name: no scheme, port, path, user, whitespace or wildcard */
+export function isHostName(name: string): boolean {
+  return isSubdomain(name);
+}
+
+/** What is wrong with a list of namespaces to discover, as an l10n key, or nothing */
+export function namespacesError(namespaces: string[], known: string[]): string | undefined {
+  const chosen = new Set(namespaces);
+
+  if (!chosen.size || [...chosen].some((name) => !known.includes(name))) {
+    return 'namespaces';
+  }
+
+  return chosen.size > MAX_NAMESPACES ? 'tooManyNamespaces' : undefined;
+}
+
 export function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
 }
@@ -52,7 +68,6 @@ export function initialForm(preflight: PreflightResult): SetupForm {
  */
 export function validateForm(form: SetupForm, preflight: PreflightResult): FormErrors {
   const errors: FormErrors = {};
-  const namespaces = new Set(form.namespaces);
 
   if (!isSubdomain(normalizeHost(form.host))) {
     errors.host = 'host';
@@ -68,10 +83,10 @@ export function validateForm(form: SetupForm, preflight: PreflightResult): FormE
     errors.tls = 'clusterIssuer';
   }
 
-  if (!namespaces.size || [...namespaces].some((name) => !preflight.namespaces.includes(name))) {
-    errors.namespaces = 'namespaces';
-  } else if (namespaces.size > MAX_NAMESPACES) {
-    errors.namespaces = 'tooManyNamespaces';
+  const namespaces = namespacesError(form.namespaces, preflight.namespaces);
+
+  if (namespaces) {
+    errors.namespaces = namespaces;
   }
 
   if (form.sso && !preflight.canUseSso) {
