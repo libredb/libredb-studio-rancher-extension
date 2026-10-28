@@ -55,6 +55,7 @@ const fieldStub = (name: string) => defineComponent({
   props: {
     value:    { type: [String, Array, Boolean], default: undefined },
     label:    { type: String, default: '' },
+    subLabel: { type: String, default: '' },
     options:  { type: Array, default: () => [] },
     labels:   { type: Array, default: () => [] },
     disabled: { type: Boolean, default: false },
@@ -265,6 +266,23 @@ describe('setup page', () => {
     expect(field(wrapper, 'libredb-setup-tls').props('options')).toStrictEqual(['secret']);
     expect(field(wrapper, 'libredb-setup-sso').props()).toMatchObject({ value: false, disabled: true });
     expect(wrapper.find('[data-testid="libredb-setup-local-sign-in"]').text()).toBe('%libredbStudio.setup.form.localSignIn%');
+  });
+
+  it('says when the TLS Secret has to be created, and which certificate serves until then', async() => {
+    const wrapper = render();
+
+    await flushPromises();
+    expect(field(wrapper, 'libredb-setup-tls-secret').props('subLabel')).toBe('%libredbStudio.setup.form.tlsSecretNew%{"namespace":"libredb-studio","name":"libredb-studio-tls"}');
+
+    await fill(wrapper, { 'libredb-setup-tls-secret': ' studio-tls ' });
+    expect(field(wrapper, 'libredb-setup-tls-secret').props('subLabel')).toBe('%libredbStudio.setup.form.tlsSecretNew%{"namespace":"libredb-studio","name":"studio-tls"}');
+
+    preflightMock.mockResolvedValueOnce({ ...PREFLIGHT, namespaceExists: true });
+
+    const existing = render();
+
+    await flushPromises();
+    expect(field(existing, 'libredb-setup-tls-secret').props('subLabel')).toBe('%libredbStudio.setup.form.tlsSecretExisting%{"namespace":"libredb-studio","name":"libredb-studio-tls"}');
   });
 
   it('asks for a ClusterIssuer when cert-manager issues the certificate', async() => {

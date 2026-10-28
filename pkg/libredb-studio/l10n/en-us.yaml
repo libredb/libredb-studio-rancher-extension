@@ -106,7 +106,7 @@ libredbStudio:
         unknown: Whether LibreDB Studio is already set up could not be checked.
       chart:
         ok: The libredb-studio chart {version}, LibreDB Studio {appVersion}, from the repository {repo}.
-        noRepo: This cluster has no chart repository {repo}. Add the Partners repository in Apps, or choose another repository.
+        noRepo: This cluster has no chart repository {repo}. Add Rancher's Partners repository in Apps.
         noChart: The repository {repo} has no libredb-studio chart.
         tooOld: The newest libredb-studio chart in {repo} is {newest}, LibreDB Studio {newestApp}. Rancher mode needs the chart {min} or later with LibreDB Studio {minApp} or later. Refresh the repository, or wait for a newer release.
         unreadable: The repository {repo} could not be read.
@@ -130,6 +130,8 @@ libredbStudio:
         secret: An existing TLS Secret in the {namespace} namespace
         cert-manager: A certificate from a cert-manager ClusterIssuer
       tlsSecretName: TLS Secret name
+      tlsSecretNew: The namespace {namespace} is new, so the TLS Secret {name} cannot be there yet. Create it in {namespace} after the setup; until then the ingress controller serves its default certificate, which browsers warn about.
+      tlsSecretExisting: The TLS Secret {name} must be in the namespace {namespace}. If it is not there yet, create it after the setup; until then the ingress controller serves its default certificate, which browsers warn about.
       clusterIssuer: ClusterIssuer
       namespaces: Namespaces to discover
       namespacesHelp: Studio lists the CloudNativePG databases of these namespaces, each one only to the people who may read its credential Secret.

@@ -82,6 +82,13 @@ export default defineComponent({
     tlsLabels(): string[] {
       return this.tlsOptions.map((option) => this.t(`libredbStudio.setup.form.tls.${ option }`, { namespace: this.namespace }));
     },
+
+    /** Where the TLS Secret has to be, which a namespace the setup creates cannot hold yet */
+    tlsSecretHelp(): string {
+      const key = this.preflight?.namespaceExists ? 'tlsSecretExisting' : 'tlsSecretNew';
+
+      return this.t(`libredbStudio.setup.form.${ key }`, { namespace: this.namespace, name: (this.form?.tlsSecretName || '').trim() });
+    },
   },
 
   // No async/await in a .vue file: vue-jest compiles it to ES5 helpers that coverage counts as lines.
@@ -212,6 +219,7 @@ export default defineComponent({
           v-model:value="form.tlsSecretName"
           class="mb-10"
           :label="t('libredbStudio.setup.form.tlsSecretName')"
+          :sub-label="tlsSecretHelp"
           data-testid="libredb-setup-tls-secret"
         />
         <LabeledSelect

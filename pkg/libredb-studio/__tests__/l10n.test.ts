@@ -66,7 +66,7 @@ describe('translations', () => {
       'libredbStudio.settings.unmarked',
       ...under('', ['title', 'intro', 'blocked', 'checkAgain', 'failed', 'doneSso', 'doneLocal', 'undoneTitle']),
       ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
-      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'ssoTrust', 'redirect', 'localSignIn', 'install']),
+      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'tlsSecretNew', 'tlsSecretExisting', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'ssoTrust', 'redirect', 'localSignIn', 'install']),
       ...under('form.errors.', ['host', 'ingressClass', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'tooManyNamespaces', 'sso', 'ssoTrust']),
       ...under('steps.', ['namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready', 'upgrade', 'saveRecord']),
       ...under('state.', ['pending', 'running', 'done', 'skipped', 'failed']),
@@ -94,5 +94,12 @@ describe('translations', () => {
     );
     expect(lookup('libredbStudio.setup.form.sso')).toBe('Sign in with Rancher (single sign-on, experimental)');
     expect(lookup('libredbStudio.settings.ssoTitle')).toBe('Single sign-on (experimental)');
+  });
+
+  it('offer no choice of chart repository, which the setup does not have', () => {
+    const enUs = yaml.load(fs.readFileSync(enUsPath, 'utf8')) as Record<string, unknown>;
+    const lookup = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enUs);
+
+    expect(lookup('libredbStudio.setup.checks.chart.noRepo')).toBe('This cluster has no chart repository {repo}. Add Rancher\'s Partners repository in Apps.');
   });
 });
