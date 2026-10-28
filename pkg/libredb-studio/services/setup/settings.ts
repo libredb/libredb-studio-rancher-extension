@@ -36,6 +36,8 @@ export interface AppInfo {
   appVersion?: string;
   status?: string;
   revision: number;
+  /** Whether it carries the extension's mark, which uninstall needs and an upgrade puts back */
+  managed: boolean;
 }
 
 export interface StudioSettings {
@@ -170,7 +172,7 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
     recordProblem:    problem,
     host:             await deployedHost(store, cluster),
     app:              state && {
-      chartVersion: state.chartVersion, appVersion: state.appVersion, status: state.status, revision: state.revision
+      chartVersion: state.chartVersion, appVersion: state.appVersion, status: state.status, revision: state.revision, managed: state.managed
     },
     link,
     status:      await studioStatus(store, link),

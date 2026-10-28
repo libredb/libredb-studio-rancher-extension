@@ -35,6 +35,11 @@ export interface ReleaseState {
   revision: number;
   chartVersion?: string;
   appVersion?: string;
+  /**
+   * Whether the release carries the extension's mark, which an upgrade through Rancher's Apps page
+   * drops, since that page sends only its own chart annotations
+   */
+  managed: boolean;
 }
 
 const HELM_TIMEOUT = '600s';
@@ -130,6 +135,7 @@ export async function releaseState(store: StoreLike, cluster: string, namespace:
     revision:     app.spec?.version || 0,
     chartVersion: app.spec?.chart?.metadata?.version,
     appVersion:   app.spec?.chart?.metadata?.appVersion,
+    managed:      isManaged(app.spec?.chart?.metadata?.annotations),
   } : undefined;
 }
 

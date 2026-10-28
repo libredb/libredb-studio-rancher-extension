@@ -42,7 +42,7 @@ const SSO = {
 };
 const SSO_RECORD: SetupRecord = { ...RECORD, sso: SSO };
 const APP_INFO: AppInfo = {
-  chartVersion: '0.1.111', appVersion: '1.2.1', status: 'deployed', revision: 3
+  chartVersion: '0.1.111', appVersion: '1.2.1', status: 'deployed', revision: 3, managed: true
 };
 const CONTEXT: RancherContext = {
   serverUrl: 'https://rancher.example.com', serverVersion: 'v2.15.2', scopes: ['openid', 'profile', 'groups'], cacerts: RANCHER_CA
@@ -280,6 +280,12 @@ describe('loading Studio\'s settings', () => {
     expect(none.app).toBeUndefined();
   });
 
+  it('tells an app upgraded in Apps, which drops the extension\'s mark from it', async() => {
+    const { store } = installed({ annotations: { 'catalog.cattle.io/ui-source-repo-type': 'cluster', 'catalog.cattle.io/ui-source-repo': 'rancher-partner-charts' } });
+
+    expect((await loadSettings(store, CLUSTER)).app?.managed).toBe(false);
+  });
+
   it('says when the record is there but cannot be read', async() => {
     const settings = await loadSettings(installed({ override: [[`GET ${ RECORD_PATH }`, { data: { 'setup.json': '{' } }]] }).store, CLUSTER);
 
@@ -290,7 +296,7 @@ describe('loading Studio\'s settings', () => {
     const settings = await loadSettings(installed({ override: [[`GET ${ APP }`, { spec: {}, status: { summary: { state: 'deployed' } } }]] }).store, CLUSTER);
 
     expect(settings.app).toStrictEqual({
-      chartVersion: undefined, appVersion: undefined, status: 'deployed', revision: 0
+      chartVersion: undefined, appVersion: undefined, status: 'deployed', revision: 0, managed: false
     });
   });
 
@@ -329,6 +335,14 @@ describe('changing the discovered namespaces', () => {
     expect(run.events.filter((event) => (event as { state: string }).state !== 'running')).toStrictEqual([
       { step: 'upgrade', state: 'done' }, { step: 'saveRecord', state: 'done' }
     ]);
+  });
+
+  it('puts the extension\'s mark back on an app upgraded in Apps', async() => {
+    const { store } = installed({ annotations: { 'catalog.cattle.io/ui-source-repo-type': 'cluster', 'catalog.cattle.io/ui-source-repo': 'rancher-partner-charts' } });
+    const result = await saveNamespaces(store, CLUSTER, RECORD, { ...APP_INFO, managed: false }, ['team-b'], options());
+
+    expect(result.ok).toBe(true);
+    expect(bodyOf(store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ annotations: MANAGED }] });
   });
 
   it('keeps the host Studio serves, whatever the record says', async() => {
@@ -407,12 +421,12 @@ describe('changing the discovered namespaces', () => {
   it('upgrades at the chart version deployed now, or the one the record names when the app does not say', async() => {
     const deployed = installed();
 
-    await saveNamespaces(deployed.store, CLUSTER, RECORD, { revision: 3 }, ['team-b'], options());
+    await saveNamespaces(deployed.store, CLUSTER, RECORD, APP_INFO, ['team-b'], options());
     expect(bodyOf(deployed.store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ version: '0.1.111' }] });
 
     const unsaid = installed({ chart: { annotations: MANAGED } });
 
-    await saveNamespaces(unsaid.store, CLUSTER, RECORD, { revision: 3 }, ['team-b'], options());
+    await saveNamespaces(unsaid.store, CLUSTER, RECORD, { revision: 3, managed: true }, ['team-b'], options());
     expect(bodyOf(unsaid.store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ version: '0.1.110' }] });
   });
 

@@ -63,6 +63,7 @@ describe('translations', () => {
     };
     const keys = [
       'libredbStudio.settings.inProject',
+      'libredbStudio.settings.unmarked',
       ...under('', ['title', 'intro', 'blocked', 'checkAgain', 'failed', 'doneSso', 'doneLocal', 'undoneTitle']),
       ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
       ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'redirect', 'localSignIn', 'install']),

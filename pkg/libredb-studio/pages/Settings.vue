@@ -250,6 +250,12 @@ export default defineComponent({
         </router-link>
       </div>
       <template v-else>
+        <Banner
+          v-if="settings.app && !settings.app.managed"
+          color="warning"
+          data-testid="libredb-settings-unmarked"
+          :label="t('libredbStudio.settings.unmarked')"
+        />
         <dl
           class="summary"
           data-testid="libredb-settings-summary"

@@ -44,7 +44,7 @@ const SETTINGS: StudioSettings = {
   recordUnreadable: false,
   host:             'studio.example.com',
   app:              {
-    chartVersion: '0.1.110', appVersion: '1.2.0', status: 'deployed', revision: 3
+    chartVersion: '0.1.110', appVersion: '1.2.0', status: 'deployed', revision: 3, managed: true
   },
   link: {
     name: 'libredb-studio.libredb-studio', toURL: 'https://studio.example.com', namespace: 'libredb-studio', deploymentName: 'libredb-studio'
@@ -131,6 +131,14 @@ describe('settings page', () => {
     expect(text(wrapper, 'libredb-studio-status')).toContain('%libredbStudio.status.ready%');
     expect(has(wrapper, 'libredb-settings-aggregation')).toBe(false);
     expect(has(wrapper, 'libredb-settings-in-project')).toBe(false);
+    expect(has(wrapper, 'libredb-settings-unmarked')).toBe(false);
+  });
+
+  it('says what an upgrade in Apps did to the app, and how to change or remove it from here on', async() => {
+    const wrapper = await loaded({ ...SETTINGS, app: { ...SETTINGS.app!, managed: false } });
+
+    expect(text(wrapper, 'libredb-settings-unmarked')).toBe('%libredbStudio.settings.unmarked%');
+    expect(has(wrapper, 'libredb-settings-uninstall')).toBe(true);
   });
 
   it('warns that project members can read Studio\'s Secrets once its namespace is in a project', async() => {
