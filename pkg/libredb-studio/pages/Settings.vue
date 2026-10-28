@@ -403,7 +403,9 @@ export default defineComponent({
           data-testid="libredb-settings-sso-on"
         >
           <h3>{{ t('libredbStudio.settings.ssoTitle', {}, true) }}</h3>
-          <p>{{ t('libredbStudio.settings.ssoOnIntro', { client: record.sso.client }, true) }}</p>
+          <p class="mb-20">
+            {{ t('libredbStudio.settings.ssoOnIntro', { client: record.sso.client }, true) }}
+          </p>
           <Banner
             v-if="!settings.ssoAdmin"
             color="info"
@@ -416,7 +418,9 @@ export default defineComponent({
               data-testid="libredb-settings-rotate"
             >
               <h4>{{ t('libredbStudio.settings.rotateTitle', {}, true) }}</h4>
-              <p>{{ t('libredbStudio.settings.rotateIntro', {}, true) }}</p>
+              <p class="mb-10">
+                {{ t('libredbStudio.settings.rotateIntro', {}, true) }}
+              </p>
               <button
                 v-if="!confirmingRotate"
                 type="button"
@@ -431,7 +435,9 @@ export default defineComponent({
                 v-else
                 data-testid="libredb-settings-rotate-confirm"
               >
-                <p>{{ t('libredbStudio.settings.rotateConfirm', { client: record.sso.client }, true) }}</p>
+                <p class="mb-10">
+                  {{ t('libredbStudio.settings.rotateConfirm', { client: record.sso.client }, true) }}
+                </p>
                 <button
                   type="button"
                   class="btn role-primary mr-10"
@@ -458,7 +464,9 @@ export default defineComponent({
                 color="warning"
                 :label="t('libredbStudio.settings.turnOffWarning', { client: record.sso.client, namespace }, true)"
               />
-              <p>{{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }, true) }}</p>
+              <p class="mt-10 mb-10">
+                {{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }, true) }}
+              </p>
               <LabeledInput
                 v-model:value="ssoOffConfirm"
                 class="mb-10"
