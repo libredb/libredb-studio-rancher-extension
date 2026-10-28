@@ -8,8 +8,9 @@ import type { SetupRecord, SsoRecord } from './values';
 import { waitFor, WaitOptions } from './wait';
 
 /**
- * Studio as an OIDC client of Rancher (design section 6.4 steps 5 and 6). Creating the client and
- * reading its secret both need a Rancher administrator, and both happen on Rancher's local cluster.
+ * Studio as an OIDC client of Rancher: the client, then its secret copied into Studio's own Secret.
+ * Creating the client and reading its secret both need a Rancher administrator, and both happen on
+ * Rancher's local cluster.
  */
 
 /** Studio never asks for offline_access, so no refresh token is issued; 300 only bounds a mistake */

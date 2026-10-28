@@ -8,7 +8,7 @@ The releases page is the authority on what that currently is: <https://github.co
 
 ## Known Risks
 
-These follow from the design and are not vulnerabilities to report.
+These follow from how the extension works and are not vulnerabilities to report.
 
 | Risk | Where | What limits it |
 | --- | --- | --- |

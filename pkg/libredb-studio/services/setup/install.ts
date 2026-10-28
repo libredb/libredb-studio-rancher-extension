@@ -17,8 +17,8 @@ export type { UndoEvent } from './cleanup';
 export type { StepState } from './steps';
 
 /**
- * F6's apply, design section 6.4 steps 4 to 10: each step reported as it runs, and on a failure
- * everything this run created removed again, in reverse order.
+ * F6's apply, from Studio's namespace to Studio being ready: each step reported as it runs, and on
+ * a failure everything this run created removed again, in reverse order.
  */
 export type StepId = 'namespace' | 'oidcClient' | 'oidcSecret' | 'rancherCA' | 'record' | 'install' | 'ready';
 export type StepEvent = AnyStepEvent<StepId>;

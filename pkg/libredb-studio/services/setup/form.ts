@@ -6,7 +6,7 @@ import type { PreflightResult } from './preflight';
 import { oidcIssuer, SetupRecord, TlsChoice } from './values';
 import type { ChartVersion } from './versions';
 
-/** What the cluster owner enters in F6 (design section 6.4 step 3) */
+/** What the cluster owner enters in F6: the host name, the certificate, the namespaces and single sign-on */
 export interface SetupForm {
   host: string;
   ingressClassName: string;

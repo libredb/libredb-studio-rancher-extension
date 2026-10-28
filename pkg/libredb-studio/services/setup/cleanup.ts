@@ -10,8 +10,8 @@ import type { SetupRecord, SsoRecord } from './values';
 import type { WaitOptions } from './wait';
 
 /**
- * Removing what the wizard created: on a failed setup (design section 6.4 step 10), and on
- * uninstall. Each removal says what became of the object, and one failure never stops the rest.
+ * Removing what the wizard created: on a failed setup, and on uninstall. Each removal says what
+ * became of the object, and one failure never stops the rest.
  */
 export type UndoId = 'release' | 'upgrade' | 'navLink' | 'record' | 'rancherCA' | 'oidcSecret' | 'oidcClient' | 'namespace';
 /**

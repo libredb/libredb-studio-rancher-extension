@@ -22,10 +22,9 @@ import { OIDC_SCOPE_LISTS } from './versions';
 import type { WaitOptions } from './wait';
 
 /**
- * F7, Studio's settings (design sections 6.2 and 6.4): the discovered namespaces, single sign-on
- * and uninstall, for a Studio the setup wizard installed. Rancher keeps no values on the app, so
- * every change rebuilds them from the wizard's record, and the record follows only after Studio
- * took the change.
+ * F7, Studio's settings: the discovered namespaces, single sign-on and uninstall, for a Studio the
+ * setup wizard installed. Rancher keeps no values on the app, so every change rebuilds them from
+ * the wizard's record, and the record follows only after Studio took the change.
  */
 
 /** What the settings page knows of the app */
@@ -307,10 +306,6 @@ async function compensate(store: StoreLike, cluster: string, record: SetupRecord
 }
 
 /**
- * Turns single sign-on on for a Studio installed with its own sign-in (design section 6.7): steps 5
- * to 8 of the setup as an upgrade, which needs a Rancher administrator.
- */
-/**
  * What the administrator saw and confirmed before single sign-on: the redirect's host, the
  * namespaces, and that owners of this cluster can then act in Rancher as anyone who signs in to Studio
  */
@@ -320,6 +315,10 @@ export interface SsoConfirmation {
   ownersTrusted: boolean;
 }
 
+/**
+ * Turns single sign-on on for a Studio installed with its own sign-in, which needs a Rancher
+ * administrator: the setup's OIDC client, client credentials and CA steps, then an upgrade.
+ */
 export async function enableSso(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, context: RancherContext, confirmed: SsoConfirmation, options: ChangeOptions = {}): Promise<ChangeResult> {
   const problem = recordProblem(record, cluster);
 
@@ -434,8 +433,8 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 }
 
 /**
- * Uninstalls Studio (design section 6.4, Uninstall) after the release name was typed by hand. When
- * the app cannot be uninstalled nothing else is touched. Single sign-on's objects are looked for
+ * Uninstalls Studio after the release name was typed by hand, the rule for destructive actions.
+ * When the app cannot be uninstalled nothing else is touched. Single sign-on's objects are looked for
  * whatever the record says, since whoever can edit the record could drop them from it; the OIDC
  * client goes only for someone allowed to delete it, and is otherwise named as left behind; the
  * record and the namespace go last, and only when everything before them went, so Settings can

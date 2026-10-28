@@ -13,7 +13,7 @@ import {
 } from './versions';
 
 /**
- * F6's preflight, design section 6.4 step 1: every check with its result, and its reason as an
+ * F6's preflight, before anything is created: every check with its result, and its reason as an
  * l10n key under libredbStudio.setup.checks.<id>. Errors stop the install; the single sign-on
  * checks (sso) stop only single sign-on, which the cluster owner can leave off.
  */
