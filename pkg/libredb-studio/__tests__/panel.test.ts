@@ -91,6 +91,19 @@ describe('LibreDB Studio masthead panel', () => {
     expect(panel.find('[data-testid="libredb-panel-open"]').text()).toContain('%libredbStudio.databases.open%');
   });
 
+  it('gives no reason under Open for a database the user may open', async() => {
+    const { resource } = setup('c-pan-allowed', { allowed: true, navlinks: [NAVLINK] });
+    const wrapper = render(resource);
+
+    await settle();
+
+    const panel = wrapper.find('[data-testid="libredb-panel"]');
+
+    expect(panel.find('[data-testid="libredb-panel-open"]').exists()).toBe(true);
+    expect(panel.find('[data-testid="libredb-panel-allowed"]').exists()).toBe(false);
+    expect(panel.text()).not.toContain('libredbStudio.databases.reason.');
+  });
+
   it('says it is checking while the review is out', async() => {
     const { resource } = setup('c-pan-4', { allowed: 'never', navlinks: [NAVLINK] });
     const wrapper = render(resource);

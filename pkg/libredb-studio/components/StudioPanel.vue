@@ -96,7 +96,7 @@ export default defineComponent({
       data-testid="libredb-panel-open-failed"
     >{{ t('libredbStudio.databases.reason.failed', reasonArgs) }}</span>
     <span
-      v-else
+      v-else-if="access !== 'allowed'"
       class="text-muted"
       :data-testid="`libredb-panel-${ access }`"
     >{{ t(`libredbStudio.databases.reason.${ access }`, reasonArgs) }}</span>
