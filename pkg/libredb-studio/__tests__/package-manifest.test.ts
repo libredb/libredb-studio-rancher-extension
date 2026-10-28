@@ -1,5 +1,8 @@
+import fs from 'fs';
+import path from 'path';
 import packageJson from '../package.json';
 import rootPackageJson from '../../../package.json';
+import { MIN_APP_VERSION, MIN_CHART_VERSION } from '../services/setup/versions';
 
 /**
  * The package.json annotations become the extension chart's catalog annotations, which decide on
@@ -46,5 +49,25 @@ describe('extension package manifest', () => {
 
   it('pins @rancher/shell exactly', () => {
     expect(rootPackageJson.dependencies['@rancher/shell']).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe('what the READMEs promise', () => {
+  const read = (file: string) => fs.readFileSync(path.resolve(__dirname, file), 'utf8');
+
+  it('states the chart floor the setup enforces', () => {
+    const card = read('../README.md');
+
+    expect(card).toContain(`chart ${ MIN_CHART_VERSION } or later`);
+    expect(MIN_APP_VERSION).toBe('1.1.1');
+    expect(card).toContain('LibreDB Studio after 1.1.0');
+  });
+
+  it('keeps the development chart repository out of every workflow, so no published build names one', () => {
+    const workflows = path.resolve(__dirname, '../../../.github/workflows');
+    const naming = fs.readdirSync(workflows).filter((file) => fs.readFileSync(path.join(workflows, file), 'utf8').includes('VUE_APP_LIBREDB_DEV_REPO'));
+
+    expect(naming).toStrictEqual([]);
+    expect(read('../../../README.md')).toContain('VUE_APP_LIBREDB_DEV_REPO');
   });
 });

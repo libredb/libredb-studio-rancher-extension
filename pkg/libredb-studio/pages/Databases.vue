@@ -7,6 +7,7 @@ import { STATE, NAME, NAMESPACE, AGE } from '@shell/config/table-headers';
 import { STEVE_STATE_COL, STEVE_NAME_COL, STEVE_NAMESPACE_COL, STEVE_AGE_COL } from '@shell/config/pagination-table-headers';
 import StudioStatus from '../components/StudioStatus.vue';
 import DatabaseAccessCell from '../components/DatabaseAccessCell.vue';
+import { PRODUCT_NAME, SETUP_ROUTE } from '../config';
 import { loadDatabasesPage, DatabasesPageState } from '../services/databases-page';
 import type { StoreLike } from '../services/types';
 
@@ -41,6 +42,13 @@ export default defineComponent({
     cluster(): string {
       return this.$route.params.cluster as string;
     },
+
+    /** The setup, for someone who could create the ClusterRole the chart renders: the cluster's owners */
+    setupRoute(): Record<string, unknown> | undefined {
+      const schema = this.$store.getters['cluster/schemaFor']('rbac.authorization.k8s.io.clusterrole') as { collectionMethods?: string[] } | undefined;
+
+      return schema?.collectionMethods?.includes('POST') ? { name: SETUP_ROUTE, params: { cluster: this.cluster, product: PRODUCT_NAME } } : undefined;
+    },
   },
 
   // No async/await in a .vue file: vue-jest compiles it to ES5 helpers that coverage counts as lines.
@@ -65,6 +73,7 @@ export default defineComponent({
         :status="page.status"
         :link="page.link"
         :found="page.found"
+        :setup-route="setupRoute"
       />
       <Banner
         v-if="!page.schema"

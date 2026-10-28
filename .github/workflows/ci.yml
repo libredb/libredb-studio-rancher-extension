@@ -41,6 +41,25 @@ jobs:
       - name: Unit tests with the 100% line coverage gate
         run: yarn test:coverage
 
+  # The connection id fixture is Studio's own file, copied byte for byte from the released Studio
+  # tag its source file names, so the extension and Studio cannot drift apart unnoticed.
+  golden-fixture:
+    name: Golden Fixture Matches Studio
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      - name: Compare the fixture with the file at the Studio tag
+        run: |
+          set -euo pipefail
+          source=tests/unit/fixtures/kubernetes-discovery-golden.source.json
+          url="https://raw.githubusercontent.com/$(jq -r .repository "$source")/$(jq -r .tag "$source")/$(jq -r .path "$source")"
+          curl -fsSL --retry 3 "$url" -o "$RUNNER_TEMP/studio-golden.json"
+          cmp "$RUNNER_TEMP/studio-golden.json" tests/unit/fixtures/kubernetes-discovery-golden.json
+
   build:
     name: Build Package
     runs-on: ubuntu-latest

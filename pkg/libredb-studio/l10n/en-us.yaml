@@ -26,5 +26,186 @@ libredbStudio:
     failed: LibreDB Studio is set up in this cluster, but its state could not be read. Reload the page to try again.
     open: Open LibreDB Studio
     severalLinks: This cluster has {count} LibreDB Studio links; this page uses {name}.
+  settings:
+    label: Settings
+    title: LibreDB Studio settings
+    notOwner: The settings of LibreDB Studio need an owner of this cluster.
+    notSetUp: LibreDB Studio is not set up in this cluster.
+    otherInstall: LibreDB Studio in this cluster was not set up with this extension, so change it in Apps, Installed Apps.
+    recordUnreadable: The setup record {namespace}/{name} cannot be read, so change LibreDB Studio in Apps, Installed Apps.
+    unmarked: LibreDB Studio was upgraded in Apps, which removes this extension's mark from the app, so Settings cannot uninstall it. Saving a change here upgrades it with the setup's values and puts the mark back; or uninstall it in Apps, Installed Apps, then come back here to remove the rest.
+    inProject: The namespace {namespace} was moved into a project, whose members can read LibreDB Studio's Secrets, the discovered database credentials among them. Move it out of the project; until then Settings changes nothing but the uninstall.
+    host: Host
+    unknownHost: Unknown
+    chart: Chart
+    chartValue: 'libredb-studio {chartVersion}, LibreDB Studio {appVersion}'
+    noApp: The app is not installed.
+    signIn: Sign-in
+    ssoOn: Rancher single sign-on, through the OIDC client {client}
+    ssoOff: Studio's own sign-in
+    save: Save
+    ssoTitle: Single sign-on (experimental)
+    ssoIntro: Let people sign in with their Rancher account. LibreDB Studio is upgraded, and from then on each person opens only the databases their own Rancher roles let them read.
+    enableSso: Turn on single sign-on
+    redirectConfirm: Rancher will send people back to {uri} after they sign in. Confirm only if this is the address of LibreDB Studio.
+    ssoNamespaces: 'LibreDB Studio will go on discovering these namespaces: {namespaces}.'
+    confirm: Confirm
+    cancel: Cancel
+    uninstallTitle: Uninstall
+    uninstallWarning: Uninstalling removes the LibreDB Studio app and its data volume, which the chart does not keep, the Secrets and ConfigMaps the setup created, and the namespace {namespace} when the setup created it and nothing else lives there. The OIDC client is deleted only for a Rancher administrator.
+    typeName: Type {name} to confirm
+    uninstall: Uninstall
+    uninstalledTitle: What became of each part
+    done:
+      namespaces: LibreDB Studio now discovers the chosen namespaces.
+      sso: Single sign-on through Rancher is on.
+      uninstall: LibreDB Studio is uninstalled.
+    failed:
+      namespaces: The namespaces could not be changed.
+      sso: Single sign-on could not be turned on.
+      uninstall: LibreDB Studio could not be uninstalled completely.
+  setup:
+    title: Set up LibreDB Studio
+    intro: Install LibreDB Studio in this cluster in Rancher mode, from the LibreDB Studio partner chart, so that people open the CloudNativePG databases of the namespaces you choose with their own Rancher permissions.
+    blocked: Fix the problems above, then check again.
+    checkAgain: Check again
+    failed: The setup did not finish. Each step and what became of everything it had created are listed above.
+    doneSso: LibreDB Studio is installed. People sign in with their Rancher account, and open only the databases their own Rancher roles let them read.
+    doneLocal: LibreDB Studio is installed with its own sign-in. Sign in as admin@libredb.org with the password the Studio pod printed once to its log in the {namespace} namespace; discovered databases are listed to Studio's admin only until single sign-on is on.
+    undoneTitle: Removed again
+    checks:
+      owner:
+        ok: You own this cluster.
+        notOwner: Setting up LibreDB Studio needs an owner of this cluster, because it creates a namespace, cluster roles and a link in the cluster's navigation. A Rancher administrator can make you one.
+      version:
+        ok: Rancher {version}.
+        old: Rancher {version} is older than 2.15, the oldest line this extension is tested on; single sign-on asks only for the openid and profile scopes there.
+        unknown: The Rancher version could not be read, so the setup assumes Rancher 2.15 or later.
+      cnpg:
+        ok: CloudNativePG is installed.
+        missing: CloudNativePG is not installed in this cluster, or you cannot see its Clusters. Install the CloudNativePG operator first.
+      aggregation:
+        ok: Project members can list CloudNativePG Clusters.
+        off: Project members cannot list CloudNativePG Clusters, so the Databases page stays empty for them. Install CloudNativePG with rbac.aggregateClusterRoles turned on to fix it.
+        unknown: Whether project members can list CloudNativePG Clusters could not be checked.
+      ingressClass:
+        ok: Studio gets an ingress of the class {name}.
+        none: The cluster has no IngressClass, and Studio needs an ingress for its own HTTPS host name. Install an ingress controller first.
+      storageClass:
+        ok: Studio's data volume uses the default StorageClass {name}.
+        none: The cluster has no default StorageClass for Studio's data volume. Mark one StorageClass as the default first.
+      namespace:
+        new: Studio gets the namespace {namespace}, outside every project.
+        existing: Studio uses the namespace {namespace}, which is outside every project.
+        inProject: The namespace {namespace} belongs to a project, whose members could read Studio's Secrets. Move it out of the project, or delete it.
+      installed:
+        ok: LibreDB Studio is not set up in this cluster yet.
+        installed: LibreDB Studio is already installed as {namespace}/{name}. Change it from Settings.
+        linked: LibreDB Studio is already set up in this cluster, in the namespace {namespace}.
+        leftover: An earlier setup left its record {namespace}/{name} behind. Remove it from Settings first.
+        unknown: Whether LibreDB Studio is already set up could not be checked.
+      chart:
+        ok: The libredb-studio chart {version}, LibreDB Studio {appVersion}, from the repository {repo}.
+        noRepo: This cluster has no chart repository {repo}. Add Rancher's Partners repository in Apps.
+        noChart: The repository {repo} has no libredb-studio chart.
+        tooOld: The newest libredb-studio chart in {repo} is {newest}, LibreDB Studio {newestApp}. Rancher mode needs the chart {min} or later with LibreDB Studio {minApp} or later. Refresh the repository, or wait for a newer release.
+        unreadable: The repository {repo} could not be read.
+      oidcProvider:
+        ok: Rancher's OIDC provider is on.
+        off: Rancher's OIDC provider is off. A Rancher administrator can activate the oidc-provider feature flag in Global Settings, which restarts Rancher. Until then, Studio installs with its own sign-in.
+        noServerUrl: Rancher's server-url setting is empty, so Studio cannot find Rancher's OIDC issuer.
+      oidcAdmin:
+        ok: You can register LibreDB Studio as an OIDC client of Rancher.
+        notAdmin: Registering LibreDB Studio as an OIDC client of Rancher needs a Rancher administrator. Install without single sign-on now; an administrator can turn it on later from Settings.
+      oidcClient:
+        ok: The OIDC client name {name} is free.
+        exists: An OIDC client named {name} already exists. A Rancher administrator can delete it, then single sign-on can be set up again.
+        unknown: Whether the OIDC client {name} exists could not be checked.
+    form:
+      host: Host name
+      hostHelp: Studio's own HTTPS host name, which must resolve to this cluster's ingress, such as studio.example.com.
+      ingressClass: Ingress class
+      tlsTitle: Certificate
+      tls:
+        secret: An existing TLS Secret in the {namespace} namespace
+        cert-manager: A certificate from a cert-manager ClusterIssuer
+      tlsSecretName: TLS Secret name
+      tlsSecretNew: The namespace {namespace} is new, so the TLS Secret {name} cannot be there yet. Create it in {namespace} after the setup; until then the ingress controller serves its default certificate, which browsers warn about.
+      tlsSecretExisting: The TLS Secret {name} must be in the namespace {namespace}. If it is not there yet, create it after the setup; until then the ingress controller serves its default certificate, which browsers warn about.
+      clusterIssuer: ClusterIssuer
+      namespaces: Namespaces to discover
+      namespacesHelp: Studio lists the CloudNativePG databases of these namespaces, each one only to the people who may read its credential Secret.
+      sso: Sign in with Rancher (single sign-on, experimental)
+      ssoTrust: Owners of this cluster will be able to act in Rancher as any user who signs in to LibreDB Studio. Enable single sign-on only on clusters whose owners you trust with that.
+      redirect: After they sign in, Rancher will send people back to {uri}.
+      localSignIn: Without single sign-on, Studio keeps its own sign-in, and lists the discovered databases to its admin only. A Rancher administrator can turn single sign-on on later from Settings.
+      install: Install
+      errors:
+        host: Enter a host name such as studio.example.com, without a scheme, a port, a path or a wildcard.
+        ingressClass: Choose an ingress class.
+        tlsSecretName: Enter the name of the TLS Secret.
+        clusterIssuer: Choose a ClusterIssuer.
+        namespaces: Choose at least one namespace to discover.
+        tooManyNamespaces: Choose at most 256 namespaces.
+        sso: Single sign-on is not available here; see the checks above.
+        ssoTrust: Single sign-on needs your acknowledgement of what owners of this cluster can then do in Rancher; tick it, or turn single sign-on off.
+    steps:
+      namespace: Create the namespace {namespace}
+      oidcClient: Register LibreDB Studio as an OIDC client of Rancher
+      oidcSecret: Copy the client credentials into the namespace {namespace}
+      rancherCA: Copy Rancher's CA into the namespace {namespace}
+      record: Record the setup
+      install: Install the chart and wait for it
+      ready: Wait for LibreDB Studio and its link
+      upgrade: Upgrade LibreDB Studio and wait for it
+      saveRecord: Update the setup record
+    state:
+      pending: Waiting
+      running: Running
+      done: Done
+      skipped: Not needed
+      failed: Failed
+    undo:
+      release: The LibreDB Studio app
+      upgrade: The settings LibreDB Studio had
+      navLink: The link in the cluster's navigation
+      record: The setup record
+      rancherCA: Rancher's CA
+      oidcSecret: The client credentials
+      oidcClient: The OIDC client
+      namespace: The namespace {namespace}
+    outcome:
+      removed: removed
+      gone: already gone
+      kept: kept
+      restored: put back
+      failed: could not be removed
+      unchecked: not checked
+    failure:
+      request: 'Rancher answered the request with an error: {detail}'
+      inProject: The namespace {namespace} was moved into a project.
+      noClientId: Rancher did not assign a client id in time.
+      noClientSecret: Rancher holds no secret for the client.
+      noRancherCA: Rancher's CA is missing.
+      helmFailed: Helm reported a failure. The Helm operation's log in Apps says why.
+      operationFailed: The Helm operation failed. Its log in Apps says why.
+      timeout: Nothing settled in time.
+      notReady: LibreDB Studio or its link did not become ready in time.
+      releaseLeft: Kept because the app could not be removed.
+      notEmpty: Kept because something else lives in it.
+      notManaged: Kept because it does not carry this extension's labels, so the extension did not create it or someone changed it; a cluster owner can remove it by hand.
+      notOurs: Kept because the setup did not create it.
+      notAllowed: Kept because deleting the OIDC client {name} needs a Rancher administrator or the global role Manage OIDC Clients; it is left behind for them.
+      retryLater: Kept so that Settings can finish the uninstall later.
+      upgradeLeft: Kept because LibreDB Studio may still run with single sign-on.
+      untrustedRecord: The setup record does not match this cluster and this extension ({field}), so Settings does not act on it. Someone may have changed it; a cluster owner can check the ConfigMap libredb-studio-setup.
+      noHost: The host name of LibreDB Studio could not be read from its Ingress.
+      hostChanged: LibreDB Studio now serves {host}; check the address again before you confirm.
+      ssoUnavailable: Single sign-on is not available here.
+      notConfirmed: Type the release name to confirm.
+      badNamespaces: The namespaces to discover must be at least one and at most 256 namespaces you can see in this cluster now.
+      changedSinceLoad: LibreDB Studio or its setup record changed since this page loaded. Check the settings again before you change them.
+      notAcknowledged: Single sign-on needs the administrator's acknowledgement of what owners of this cluster can then do in Rancher.
+      mayBeLeft: An OIDC client {name} is left behind if single sign-on was ever turned on here. Checking for it and deleting it need a Rancher administrator or the global role Manage OIDC Clients.
 product:
   libredb: LibreDB Studio

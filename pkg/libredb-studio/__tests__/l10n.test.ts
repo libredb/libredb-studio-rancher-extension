@@ -42,4 +42,64 @@ describe('translations', () => {
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);
   });
+
+  it('hold every message the setup can show', () => {
+    const enUs = yaml.load(fs.readFileSync(enUsPath, 'utf8')) as Record<string, unknown>;
+    const lookup = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enUs);
+    const under = (prefix: string, names: string[]) => names.map((name) => `libredbStudio.setup.${ prefix }${ name }`);
+    const checks: Record<string, string[]> = {
+      owner:        ['ok', 'notOwner'],
+      version:      ['ok', 'old', 'unknown'],
+      cnpg:         ['ok', 'missing'],
+      aggregation:  ['ok', 'off', 'unknown'],
+      ingressClass: ['ok', 'none'],
+      storageClass: ['ok', 'none'],
+      namespace:    ['new', 'existing', 'inProject'],
+      installed:    ['ok', 'installed', 'linked', 'leftover', 'unknown'],
+      chart:        ['ok', 'noRepo', 'noChart', 'tooOld', 'unreadable'],
+      oidcProvider: ['ok', 'off', 'noServerUrl'],
+      oidcAdmin:    ['ok', 'notAdmin'],
+      oidcClient:   ['ok', 'exists', 'unknown'],
+    };
+    const keys = [
+      'libredbStudio.settings.inProject',
+      'libredbStudio.settings.unmarked',
+      ...under('', ['title', 'intro', 'blocked', 'checkAgain', 'failed', 'doneSso', 'doneLocal', 'undoneTitle']),
+      ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
+      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'tlsSecretNew', 'tlsSecretExisting', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'ssoTrust', 'redirect', 'localSignIn', 'install']),
+      ...under('form.errors.', ['host', 'ingressClass', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'tooManyNamespaces', 'sso', 'ssoTrust']),
+      ...under('steps.', ['namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready', 'upgrade', 'saveRecord']),
+      ...under('state.', ['pending', 'running', 'done', 'skipped', 'failed']),
+      ...under('undo.', ['release', 'upgrade', 'navLink', 'record', 'rancherCA', 'oidcSecret', 'oidcClient', 'namespace']),
+      ...under('outcome.', ['removed', 'gone', 'kept', 'restored', 'failed', 'unchecked']),
+      ...under('failure.', [
+        'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
+        'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
+        'changedSinceLoad', 'mayBeLeft', 'notAcknowledged',
+      ]),
+      ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
+        'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle',
+        'done.namespaces', 'done.sso', 'done.uninstall', 'failed.namespaces', 'failed.sso', 'failed.uninstall'].map((key) => `libredbStudio.settings.${ key }`),
+    ];
+
+    expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);
+  });
+
+  it('say word for word what single sign-on lets this cluster\'s owners do, and call it experimental', () => {
+    const enUs = yaml.load(fs.readFileSync(enUsPath, 'utf8')) as Record<string, unknown>;
+    const lookup = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enUs);
+
+    expect(lookup('libredbStudio.setup.form.ssoTrust')).toBe(
+      'Owners of this cluster will be able to act in Rancher as any user who signs in to LibreDB Studio. Enable single sign-on only on clusters whose owners you trust with that.'
+    );
+    expect(lookup('libredbStudio.setup.form.sso')).toBe('Sign in with Rancher (single sign-on, experimental)');
+    expect(lookup('libredbStudio.settings.ssoTitle')).toBe('Single sign-on (experimental)');
+  });
+
+  it('offer no choice of chart repository, which the setup does not have', () => {
+    const enUs = yaml.load(fs.readFileSync(enUsPath, 'utf8')) as Record<string, unknown>;
+    const lookup = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enUs);
+
+    expect(lookup('libredbStudio.setup.checks.chart.noRepo')).toBe('This cluster has no chart repository {repo}. Add Rancher\'s Partners repository in Apps.');
+  });
 });

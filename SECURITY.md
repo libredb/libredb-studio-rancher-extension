@@ -6,6 +6,15 @@ Security fixes are released against the latest published release only.
 There is no long-term support branch and no backport policy: if you run an older version, the upgrade path to a fix is the current release.
 The releases page is the authority on what that currently is: <https://github.com/libredb/libredb-studio-rancher-extension/releases>
 
+## Known Risks
+
+These follow from how the extension works and are not vulnerabilities to report.
+
+| Risk | Where | What limits it |
+| --- | --- | --- |
+| Owners of the cluster that runs LibreDB Studio can act in Rancher as any user who signs in to LibreDB Studio | Single sign-on through Rancher, which is experimental | The setup and the Settings page turn single sign-on on only after a Rancher administrator acknowledges this risk; without single sign-on LibreDB Studio keeps its own sign-in. Enable it only on clusters whose owners you trust that far. |
+| The OIDC client secret sits in LibreDB Studio's own Secret, which owners of its cluster can read | Single sign-on through Rancher | The secret is never in chart values or the Apps form, and the extension never shows it. Rotation is manual until the Settings page offers it: a Rancher administrator regenerates the secret in Users & Authentication, OIDC Apps, or with the annotation `cattle.io/oidc-client-secret-regenerate: client-secret-1` on the OIDCClient `libredb-studio-<cluster id>`, writes the new value under `oidc-client-secret` into the Secret `libredb-studio-oidc` in the `libredb-studio` namespace, and restarts the `libredb-studio` Deployment. |
+
 ## Reporting a Vulnerability
 
 Please do not report security vulnerabilities through public GitHub issues.

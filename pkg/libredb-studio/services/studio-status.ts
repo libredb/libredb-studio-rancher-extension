@@ -6,7 +6,7 @@ export const DEPLOYMENT_TYPE = 'apps.deployment';
 export type StudioStatus = 'not-set-up' | 'ready' | 'not-ready' | 'unknown' | 'failed';
 
 /** The HTTP status of a failed store request, whether or not the response had a body */
-function statusOf(err: unknown): number | undefined {
+export function statusOf(err: unknown): number | undefined {
   const failed = err as { _status?: number, response?: { status?: number } } | undefined;
 
   return failed?._status || failed?.response?.status;
