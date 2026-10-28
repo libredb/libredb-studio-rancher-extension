@@ -3,10 +3,10 @@
 # page, as gh-pages lays it out: index.yaml, the chart under assets/ and the plugin under extensions/.
 #
 # The chart comes from the shell's publish script, which the release workflow runs, so its annotations
-# are the ones the Extensions page judges. Only the plugin's endpoint changes: a released chart names
-# gh-pages, which has no build of this checkout, so here it names the same repository served at
-# REPO_URL, where Rancher fetches the plugin after the install. Needs helm, jq and yq 4, as the
-# publish script does.
+# are the ones the Extensions page judges. Only its two URLs change, because a released chart names
+# gh-pages for the plugin and main for the icon, which have neither of this checkout's files: here
+# both name the same repository served at REPO_URL, from which Rancher fetches the plugin after the
+# install and the icon for the Extensions page. Needs helm, jq and yq 4, as the publish script does.
 #
 # Usage: scripts/e2e/chart-repo.sh <empty output directory> <repository URL as Rancher reaches it>
 set -euo pipefail
@@ -42,8 +42,10 @@ yarn -s publish-pkgs -s libredb/libredb-studio-rancher-extension -b e2e -n -f "$
 chart="charts/${pkg}/${version}"
 endpoint="${repo_url}/extensions/${pkg}/${version}"
 ENDPOINT="$endpoint" yq -i '.plugin.endpoint = strenv(ENDPOINT) | .plugin.compressedEndpoint = strenv(ENDPOINT) + ".tgz"' "$chart/values.yaml"
+ICON="${repo_url}/icon.svg" yq -i '.icon = strenv(ICON)' "$chart/Chart.yaml"
 
 mkdir -p "$out/assets/${pkg}"
+cp "pkg/${pkg}/assets/icon.svg" "$out/icon.svg"
 helm package "$chart" -d "$out/assets/${pkg}" >/dev/null
 cp -R extensions "$out/extensions"
 helm repo index "$out/assets" --url assets/
