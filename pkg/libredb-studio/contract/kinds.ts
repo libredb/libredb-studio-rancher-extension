@@ -5,7 +5,15 @@
 
 export interface ContractResource {
   metadata: { namespace: string, name: string };
-  spec?: { bootstrap?: { initdb?: { secret?: { name?: string } } } };
+  spec?: { bootstrap?: { initdb?: { database?: string, owner?: string, secret?: { name?: string } } } };
+}
+
+/** Where a database is and who connects to it, as its resource says; never a password */
+export interface ConnectionSummary {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
 }
 
 export interface ContractKind {
@@ -17,6 +25,8 @@ export interface ContractKind {
   studioType: string;
   /** The Secret that holds the credentials Studio connects with; the extension never reads it */
   credentialSecretName(resource: ContractResource): string;
+  /** What a user may be shown about the connection, read from the resource alone */
+  connectionSummary(resource: ContractResource): ConnectionSummary;
 }
 
 export const CNPG_CLUSTER_KIND: ContractKind = {
@@ -25,6 +35,18 @@ export const CNPG_CLUSTER_KIND: ContractKind = {
   studioType: 'postgres',
   credentialSecretName(resource) {
     return resource.spec?.bootstrap?.initdb?.secret?.name || `${ resource.metadata.name }-app`;
+  },
+  connectionSummary(resource) {
+    const initdb = resource.spec?.bootstrap?.initdb;
+    // CloudNativePG's defaults: the database is app, and its owner is named after the database
+    const database = initdb?.database || 'app';
+
+    return {
+      host: `${ resource.metadata.name }-rw.${ resource.metadata.namespace }.svc`,
+      port: 5432,
+      database,
+      user: initdb?.owner || database,
+    };
   },
 };
 

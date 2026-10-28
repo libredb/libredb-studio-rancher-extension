@@ -4,7 +4,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import golden from '../../../tests/unit/fixtures/kubernetes-discovery-golden.json';
 import { CNPG_CLUSTER_KIND, SUPPORTED_KINDS, kindFor } from '../contract/kinds';
-import { connectionId, studioLink, STUDIO_ID_RULE } from '../contract/connection-id';
+import { connectionId, databaseLink, studioLink, STUDIO_ID_RULE } from '../contract/connection-id';
 
 describe('contract table', () => {
   it('supports CloudNativePG Clusters only in the first release', () => {
@@ -28,6 +28,27 @@ describe('contract table', () => {
     const resource = { metadata: { namespace: 'a', name: 'db' }, spec: { bootstrap: { initdb: { secret: { name: 'owner' } } } } };
 
     expect(CNPG_CLUSTER_KIND.credentialSecretName(resource)).toBe('owner');
+  });
+});
+
+describe('connection summary', () => {
+  it('names the read-write Service, port 5432 and CloudNativePG\'s default database and owner', () => {
+    expect(CNPG_CLUSTER_KIND.connectionSummary({ metadata: { namespace: 'team-a', name: 'orders' } })).toStrictEqual({
+      host: 'orders-rw.team-a.svc', port: 5432, database: 'app', user: 'app'
+    });
+  });
+
+  it('takes the database from initdb, and the owner when set, else the database', () => {
+    const summary = (initdb: Record<string, unknown>) => CNPG_CLUSTER_KIND.connectionSummary({ metadata: { namespace: 'p', name: 'db' }, spec: { bootstrap: { initdb } } });
+
+    expect(summary({ database: 'billing' })).toMatchObject({ database: 'billing', user: 'billing' });
+    expect(summary({ database: 'billing', owner: 'billing_owner' })).toMatchObject({ database: 'billing', user: 'billing_owner' });
+  });
+
+  it('never carries a password', () => {
+    const resource = { metadata: { namespace: 'p', name: 'db' }, spec: { bootstrap: { initdb: { secret: { name: 'owner' } } } } };
+
+    expect(Object.keys(CNPG_CLUSTER_KIND.connectionSummary(resource))).toStrictEqual(['host', 'port', 'database', 'user']);
   });
 });
 
@@ -57,6 +78,13 @@ describe('studio link', () => {
   });
 });
 
+describe('database link', () => {
+  it('is the Studio link of the resource\'s connection id', () => {
+    expect(databaseLink('https://studio.example.com', CNPG_CLUSTER_KIND, { metadata: { namespace: 'team-a', name: 'orders' } }))
+      .toBe(studioLink('https://studio.example.com', connectionId('cnpg', 'team-a', 'orders')));
+  });
+});
+
 describe('golden fixture', () => {
   it.each(golden.cases.map((c) => [`${ c.resource.metadata.namespace }/${ c.resource.metadata.name }`, c]))('%s maps to its Secret, id and link', (_, c) => {
     const kind = CNPG_CLUSTER_KIND;
@@ -66,6 +94,7 @@ describe('golden fixture', () => {
     expect(kind.credentialSecretName(c.resource)).toBe(c.secretName);
     expect(id).toBe(c.connectionId);
     expect(studioLink(c.toURL, id)).toBe(c.link);
+    expect(databaseLink(c.toURL, kind, c.resource)).toBe(c.link);
   });
 
   it('is still the provisional copy, until the copy of Studio\'s fixture from a released tag replaces it', () => {
