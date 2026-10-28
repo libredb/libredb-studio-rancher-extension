@@ -3,6 +3,7 @@ import { CNPG_CLUSTER_TYPE } from '../config';
 import { connectionId } from '../contract/connection-id';
 import { clearReviews } from '../services/access';
 import openInStudioAction from '../actions/open-in-studio';
+import * as openService from '../services/open';
 import type { ShellResource } from '../services/open';
 
 const NAVLINK = { metadata: { name: 'studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } };
@@ -100,5 +101,21 @@ describe('open in LibreDB Studio row action', () => {
 
     await expect(invoke({ ...resource, type: 'apps.deployment' })).resolves.toBe(false);
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('says it failed when the open itself fails', async() => {
+    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const { dispatch, resource } = setup('c-act-5');
+
+    jest.spyOn(openService, 'openDatabase').mockRejectedValueOnce(new Error('Loading chunk studio-link failed'));
+
+    await expect(invoke(resource)).resolves.toBe(false);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith('growl/warning', {
+      title:   '%libredbStudio.open.refused%',
+      message: '%libredbStudio.databases.reason.failed%{"secret":"orders-app","namespace":"team-a"}',
+      timeout: 10000,
+    });
   });
 });

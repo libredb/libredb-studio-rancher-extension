@@ -21,7 +21,7 @@ export default defineComponent({
   },
 
   data() {
-    return { opening: false };
+    return { opening: false, openFailed: false };
   },
 
   computed: {
@@ -47,9 +47,14 @@ export default defineComponent({
     // No async/await in a .vue file: vue-jest compiles it to ES5 helpers that coverage counts as lines.
     open(): Promise<void> {
       this.opening = true;
+      this.openFailed = false;
 
+      // A rejection, such as the link chunk failing to load after an upgrade, is shown as a failed open
       return openDatabase(this.target as OpenTarget).then(() => {
         this.opening = false;
+      }, () => {
+        this.opening = false;
+        this.openFailed = true;
       });
     },
   },
@@ -85,6 +90,11 @@ export default defineComponent({
     >
       <i class="icon icon-external-link mr-5" />{{ t('libredbStudio.databases.open') }}
     </button>
+    <span
+      v-if="access === 'allowed' && openFailed"
+      class="text-error"
+      data-testid="libredb-panel-open-failed"
+    >{{ t('libredbStudio.databases.reason.failed', reasonArgs) }}</span>
     <span
       v-else
       class="text-muted"

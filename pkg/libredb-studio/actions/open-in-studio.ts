@@ -1,5 +1,7 @@
 import type { Action, ActionOpts } from '@shell/core/types';
-import { canOpen, openDatabase, targetOf, ShellResource } from '../services/open';
+import {
+  canOpen, openDatabase, targetOf, OpenResult, ShellResource
+} from '../services/open';
 
 type Translate = (key: string, args?: Record<string, unknown>) => string;
 
@@ -17,7 +19,8 @@ async function openFromMenu(resource: ShellResource): Promise<boolean> {
     return false;
   }
 
-  const result = await openDatabase(target);
+  // A rejection, such as the link chunk failing to load after an upgrade, is a failed open the user is told about
+  const result = await openDatabase(target).catch((): OpenResult => 'failed');
 
   if (result !== 'opened') {
     const t = resource.$rootGetters['i18n/t'] as Translate;
