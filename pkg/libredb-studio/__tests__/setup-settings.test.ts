@@ -91,6 +91,8 @@ interface Installed {
   ingressHost?: string;
   /** The chart metadata of the release, the deployed chart with `annotations` by default */
   chart?: Record<string, unknown>;
+  /** Store reads to answer differently from a ready cluster */
+  find?: Record<string, unknown>;
 }
 
 /**
@@ -99,7 +101,7 @@ interface Installed {
  * the app and the chart's NavLink go away.
  */
 function installed({
-  record = RECORD, override = [], upgradeStates = ['deployed'], annotations = MANAGED, ingressHost = HOST, chart
+  record = RECORD, override = [], upgradeStates = ['deployed'], annotations = MANAGED, ingressHost = HOST, chart, find = {}
 }: Installed = {}) {
   const setup = readyCluster();
   const holder = {} as { store: ReturnType<typeof fakeStore>, kube: FakeKube };
@@ -141,7 +143,7 @@ function installed({
   });
   holder.store = fakeStore({
     ...setup,
-    find:              { ...setup.find, 'cluster/apps.deployment/libredb-studio/libredb-studio': { status: { readyReplicas: 1 } } },
+    find:              { ...setup.find, 'cluster/apps.deployment/libredb-studio/libredb-studio': { status: { readyReplicas: 1 } }, ...find },
     findLabelSelector: { 'cluster/ui.cattle.io.navlink': [{ metadata: { name: 'libredb-studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } }] },
     requests:          [
       ...override,
@@ -181,6 +183,10 @@ describe('the setup record', () => {
     expect(recordProblem({ ...RECORD, release: { ...RECORD.release, chart: 'other' } }, CLUSTER)).toBe('release');
     expect(recordProblem({ ...RECORD, sso: { ...SSO, client: 'rancher-ai' } }, CLUSTER)).toBe('client');
     expect(recordProblem({ ...RECORD, release: { ...RECORD.release, repo: 'someone-elses-charts' } }, CLUSTER)).toBe('repo');
+    expect(recordProblem({ ...RECORD, sso: { ...SSO, scope: 'openid profile groups offline_access' } }, CLUSTER)).toBe('scope');
+    expect(recordProblem({ ...RECORD, sso: { ...SSO, scope: 'openid' } }, CLUSTER)).toBe('scope');
+    // A client registered on a Rancher line before 2.15 keeps the scopes it was registered with
+    expect(recordProblem({ ...RECORD, sso: { ...SSO, scope: 'openid profile' } }, CLUSTER)).toBeUndefined();
   });
 
   describe('a record someone changed', () => {
@@ -194,6 +200,7 @@ describe('the setup record', () => {
       }, 'release'],
       ['another OIDC client', { ...SSO_RECORD, sso: { ...SSO, client: 'some-other-client' } }, 'client'],
       ['another chart repository', { ...SSO_RECORD, release: { ...RECORD.release, repo: 'someone-elses-charts' } }, 'repo'],
+      ['other scopes', { ...SSO_RECORD, sso: { ...SSO, scope: 'openid profile groups offline_access' } }, 'scope'],
     ];
 
     it.each(forged)('naming %s steers no action', async(_, record, field) => {
@@ -347,6 +354,25 @@ describe('changing the discovered namespaces', () => {
 
     await expect(saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual({
       ok: false, failure: { reason: 'noHost' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('points Studio at Rancher\'s own OIDC issuer, never at one the record names', async() => {
+    const record = { ...SSO_RECORD, sso: { ...SSO, issuer: 'https://idp.example.net/oidc' } };
+    const { store } = installed({ record });
+    const result = await saveNamespaces(store, CLUSTER, record, APP_INFO, ['team-b'], options());
+    const values = (bodyOf(store, `POST ${ UPGRADE }`) as { charts: { values: { config: Record<string, unknown> } }[] }).charts[0].values;
+
+    expect(values.config.oidcIssuer).toBe('https://rancher.example.com/oidc');
+    expect(result.record?.sso).toStrictEqual(SSO);
+  });
+
+  it('refuses to save single sign-on\'s values without Rancher\'s server URL', async() => {
+    const { store } = installed({ record: SSO_RECORD, find: { 'management/management.cattle.io.setting/server-url': {} } });
+
+    await expect(saveNamespaces(store, CLUSTER, SSO_RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'ssoUnavailable' }, undone: []
     });
     expect(changes(store)).toStrictEqual([]);
   });

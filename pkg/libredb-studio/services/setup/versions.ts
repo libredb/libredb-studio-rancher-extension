@@ -100,6 +100,9 @@ export function oidcScopes(line: RancherLine | undefined): string[] {
   return current ? ['openid', 'profile', 'groups'] : ['openid', 'profile'];
 }
 
+/** Every scope list a Rancher line registers Studio's client with, as the setup record keeps it */
+export const OIDC_SCOPE_LISTS: string[] = [oidcScopes(undefined), oidcScopes({ major: 2, minor: 14 })].map((scopes) => scopes.join(' '));
+
 /**
  * The newest released chart version in a repository index with Rancher mode and an application
  * that runs it, and the newest released version whatever it holds, for saying what is missing.

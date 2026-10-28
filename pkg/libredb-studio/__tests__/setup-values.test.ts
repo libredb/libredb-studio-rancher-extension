@@ -2,7 +2,7 @@ import {
   compareVersions, parseVersion, rancherLine, oidcScopes, pickChartVersion, MIN_CHART_VERSION, MIN_APP_VERSION
 } from '../services/setup/versions';
 import {
-  chartValues, parseRecord, sameRecord, serializeRecord, SetupRecord
+  chartValues, oidcIssuer, parseRecord, sameRecord, serializeRecord, SetupRecord
 } from '../services/setup/values';
 import {
   STUDIO_NAMESPACE, RELEASE_NAME, CHART_NAME, OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, CHART_REPO, chartRepo, oidcClientName
@@ -175,6 +175,11 @@ describe('chart values', () => {
     expect(values).not.toHaveProperty('extraVolumes');
     expect(values).not.toHaveProperty('extraVolumeMounts');
     expect(values).not.toHaveProperty('extraEnv');
+  });
+
+  it('finds Rancher\'s OIDC issuer under its server URL', () => {
+    expect(oidcIssuer('https://rancher.example.com')).toBe('https://rancher.example.com/oidc');
+    expect(oidcIssuer('https://rancher.example.com//')).toBe('https://rancher.example.com/oidc');
   });
 
   it('installs with Studio\'s own sign-in and no review without single sign-on', () => {

@@ -3,7 +3,7 @@ import {
   CERT_MANAGER_TLS_SECRET, CHART_NAME, CHART_REPO, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import type { PreflightResult } from './preflight';
-import type { SetupRecord, TlsChoice } from './values';
+import { oidcIssuer, SetupRecord, TlsChoice } from './values';
 import type { ChartVersion } from './versions';
 
 /** What the cluster owner enters in F6 (design section 6.4 step 3) */
@@ -118,7 +118,7 @@ export function planFrom(cluster: string, preflight: PreflightResult, form: Setu
 
   record.sso = {
     client:    oidcClientName(cluster),
-    issuer:    `${ (preflight.serverUrl as string).replace(/\/+$/, '') }/oidc`,
+    issuer:    oidcIssuer(preflight.serverUrl as string),
     scope:     preflight.scopes.join(' '),
     rancherCA: !!preflight.cacerts,
   };

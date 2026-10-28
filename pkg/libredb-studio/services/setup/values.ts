@@ -34,6 +34,11 @@ export interface SetupRecord {
   createdNamespace: boolean;
 }
 
+/** Rancher's OIDC issuer, which lives under its server URL */
+export function oidcIssuer(serverUrl: string): string {
+  return `${ serverUrl.replace(/\/+$/, '') }/oidc`;
+}
+
 const CA_DIR = '/etc/libredb/rancher-ca';
 
 /** How often the browser rereads the managed list, discovered databases included */

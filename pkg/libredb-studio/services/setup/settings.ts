@@ -17,7 +17,10 @@ import {
 import { createConfigMap, readRecord, replaceRecord } from './record';
 import { releaseState, upgradeRelease, waitForRelease } from './release';
 import { runSteps, StepEvent } from './steps';
-import { sameRecord, SetupRecord, SsoRecord } from './values';
+import {
+  oidcIssuer, sameRecord, SetupRecord, SsoRecord
+} from './values';
+import { OIDC_SCOPE_LISTS } from './versions';
 import type { WaitOptions } from './wait';
 
 /**
@@ -76,7 +79,8 @@ export interface ChangeResult {
 /**
  * Why a record must not steer an action, or nothing. Anyone who can edit Studio's namespace can edit
  * the record, so an administrator's action on it stays on this cluster, on the release the
- * extension installs, and on the OIDC client it would create here.
+ * extension installs, on the OIDC client it would create here, and on the scopes a Rancher line
+ * registers that client with.
  */
 export function recordProblem(record: SetupRecord, cluster: string): string | undefined {
   if (record.cluster !== cluster) {
@@ -94,7 +98,15 @@ export function recordProblem(record: SetupRecord, cluster: string): string | un
     return 'repo';
   }
 
-  return record.sso && record.sso.client !== oidcClientName(cluster) ? 'client' : undefined;
+  if (!record.sso) {
+    return undefined;
+  }
+
+  if (record.sso.client !== oidcClientName(cluster)) {
+    return 'client';
+  }
+
+  return OIDC_SCOPE_LISTS.includes(record.sso.scope) ? undefined : 'scope';
 }
 
 /** The host Studio's Ingress serves, when it is a bare host name; never the record's */
@@ -235,6 +247,17 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
   const changed: SetupRecord = {
     ...record, host, namespaces: [...new Set(namespaces)].sort((a, b) => a.localeCompare(b))
   };
+
+  // Studio trusts the issuer for every sign-in, so it is Rancher's own, never the record's
+  if (changed.sso) {
+    const { serverUrl } = await rancherContext(store);
+
+    if (!serverUrl) {
+      return refused('ssoUnavailable');
+    }
+
+    changed.sso = { ...changed.sso, issuer: oidcIssuer(serverUrl) };
+  }
   const failed = await runSteps<ChangeStepId>(['upgrade', 'saveRecord'], {
     upgrade: async() => {
       await upgradeTo(store, cluster, changed, options);
@@ -338,7 +361,7 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 
   const sso: SsoRecord = {
     client:    oidcClientName(cluster),
-    issuer:    `${ context.serverUrl.replace(/\/+$/, '') }/oidc`,
+    issuer:    oidcIssuer(context.serverUrl),
     scope:     context.scopes.join(' '),
     rancherCA: !!context.cacerts,
   };
