@@ -55,6 +55,36 @@ describe('extension package manifest', () => {
   });
 });
 
+/**
+ * The publish script makes package.json's icon the chart's icon, which the Extensions page shows on
+ * the card and in the details, and the Installed card reads it from the plugin's metadata, which is
+ * package.json. The partner catalog takes only an https icon on raw.githubusercontent.com.
+ */
+describe('the extension icon', () => {
+  const RAW_MAIN = 'https://raw.githubusercontent.com/libredb/libredb-studio-rancher-extension/main/';
+  const repoFile = (url: string) => path.resolve(__dirname, '../../..', url.slice(RAW_MAIN.length));
+
+  it('is served from this repository\'s main branch on raw.githubusercontent.com', () => {
+    expect(packageJson.icon.startsWith(RAW_MAIN)).toBe(true);
+    expect(repoFile(packageJson.icon)).toBe(path.resolve(__dirname, '../assets/icon.svg'));
+    expect(fs.existsSync(repoFile(packageJson.icon))).toBe(true);
+  });
+
+  it('is a self-contained SVG with no script and nothing fetched from elsewhere', () => {
+    const svg = fs.readFileSync(repoFile(packageJson.icon), 'utf8');
+
+    expect(svg).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"[^>]* viewBox="[^"]+">/);
+    expect(svg).not.toMatch(/<script|<foreignObject|\son[a-z]+=/i);
+    expect([...svg.matchAll(/href="([^"]*)"/g)].map(([, ref]) => ref).filter((ref) => !ref.startsWith('#'))).toStrictEqual([]);
+  });
+
+  it('keeps its own white backdrop inside the outline, so it reads on light and dark themes alike', () => {
+    const svg = fs.readFileSync(repoFile(packageJson.icon), 'utf8');
+
+    expect(svg).toMatch(/<g>\n<path fill="#ffffff" d="M325\.19,23\.39/);
+  });
+});
+
 describe('what the READMEs promise', () => {
   const read = (file: string) => fs.readFileSync(path.resolve(__dirname, file), 'utf8');
 
