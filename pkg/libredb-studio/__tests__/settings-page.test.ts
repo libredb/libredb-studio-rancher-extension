@@ -20,7 +20,8 @@ const saveMock = saveNamespaces as jest.Mock;
 const ssoMock = enableSso as jest.Mock;
 const uninstallMock = uninstallStudio as jest.Mock;
 
-const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args ? JSON.stringify(args) : '' }`;
+// Arguments show as JSON, none as nothing; whether a text was asked for raw is checked on its own
+const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args && Object.keys(args).length ? JSON.stringify(args) : '' }`;
 
 const RECORD: SetupRecord = {
   version: 1,
@@ -129,6 +130,28 @@ describe('settings page', () => {
     expect(text(wrapper, 'libredb-settings-summary')).toContain('%libredbStudio.settings.ssoOff%');
     expect(text(wrapper, 'libredb-studio-status')).toContain('%libredbStudio.status.ready%');
     expect(has(wrapper, 'libredb-settings-aggregation')).toBe(false);
+  });
+
+  it('asks t for raw text wherever it renders a message as text', async() => {
+    loadMock.mockResolvedValue(SETTINGS);
+    const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+
+    mount(Settings, {
+      global: {
+        mocks: {
+          t: raw, $store: { getters: {}, dispatch: jest.fn() }, $route: { params: { cluster: 'c-m-1' } }
+        },
+        stubs: {
+          Banner: BannerStub, Loading: true, LabeledInput: fieldStub('LabeledInput'), LabeledSelect: fieldStub('LabeledSelect'), RouterLink: RouterLinkStub, StudioStatus: true
+        },
+      },
+    });
+    await flushPromises();
+
+    const asText = raw.mock.calls.filter((call) => ['libredbStudio.settings.title', 'libredbStudio.settings.host', 'libredbStudio.settings.ssoOff', 'libredbStudio.settings.ssoIntro'].includes(call[0]));
+
+    expect(asText.length).toBeGreaterThanOrEqual(4);
+    expect(asText.every((call) => call[2] === true)).toBe(true);
   });
 
   it('says only that the settings need an owner of the cluster to anyone else', async() => {

@@ -57,26 +57,26 @@ export default defineComponent({
         :data-testid="`libredb-step-${ item.step }`"
       >
         <i :class="['icon', icon(item)]" />
-        <span>{{ t(`libredbStudio.setup.steps.${ item.step }`, names) }}</span>
-        <span class="text-muted">{{ t(`libredbStudio.setup.state.${ item.state }`) }}</span>
+        <span>{{ t(`libredbStudio.setup.steps.${ item.step }`, names, true) }}</span>
+        <span class="text-muted">{{ t(`libredbStudio.setup.state.${ item.state }`, {}, true) }}</span>
         <span
           v-if="item.failure"
           class="text-error"
           :data-testid="`libredb-step-${ item.step }-failure`"
-        >{{ t(`libredbStudio.setup.failure.${ item.failure.reason }`, item.failure.args) }}</span>
+        >{{ t(`libredbStudio.setup.failure.${ item.failure.reason }`, item.failure.args, true) }}</span>
       </li>
     </ol>
     <template v-if="undone.length">
-      <h4>{{ t(undoneTitleKey) }}</h4>
+      <h4>{{ t(undoneTitleKey, {}, true) }}</h4>
       <ul data-testid="libredb-undone">
         <li
           v-for="item in undone"
           :key="item.undo"
           :data-testid="`libredb-undo-${ item.undo }`"
         >
-          <span>{{ t(`libredbStudio.setup.undo.${ item.undo }`, names) }}</span>
-          <span :class="item.outcome === 'failed' ? 'text-error' : 'text-muted'">{{ t(`libredbStudio.setup.outcome.${ item.outcome }`) }}</span>
-          <span v-if="item.failure">{{ t(`libredbStudio.setup.failure.${ item.failure.reason }`, item.failure.args) }}</span>
+          <span>{{ t(`libredbStudio.setup.undo.${ item.undo }`, names, true) }}</span>
+          <span :class="item.outcome === 'failed' ? 'text-error' : 'text-muted'">{{ t(`libredbStudio.setup.outcome.${ item.outcome }`, {}, true) }}</span>
+          <span v-if="item.failure">{{ t(`libredbStudio.setup.failure.${ item.failure.reason }`, item.failure.args, true) }}</span>
         </li>
       </ul>
     </template>

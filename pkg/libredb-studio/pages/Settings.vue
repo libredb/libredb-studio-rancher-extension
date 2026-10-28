@@ -167,7 +167,7 @@ export default defineComponent({
   <div class="libredb-settings">
     <header>
       <div class="title">
-        <h1>{{ t('libredbStudio.settings.title') }}</h1>
+        <h1>{{ t('libredbStudio.settings.title', {}, true) }}</h1>
       </div>
     </header>
     <Loading v-if="!settings" />
@@ -206,7 +206,7 @@ export default defineComponent({
           class="text-error"
           data-testid="libredb-settings-failure"
         >
-          {{ t(`libredbStudio.setup.failure.${ result.failure.reason }`, result.failure.args) }}
+          {{ t(`libredbStudio.setup.failure.${ result.failure.reason }`, result.failure.args, true) }}
         </p>
       </template>
       <Banner
@@ -240,7 +240,7 @@ export default defineComponent({
           :to="setupRoute"
           data-testid="libredb-settings-set-up"
         >
-          {{ t('libredbStudio.setup.title') }}
+          {{ t('libredbStudio.setup.title', {}, true) }}
         </router-link>
       </div>
       <template v-else>
@@ -248,19 +248,19 @@ export default defineComponent({
           class="summary"
           data-testid="libredb-settings-summary"
         >
-          <dt>{{ t('libredbStudio.settings.host') }}</dt>
-          <dd>{{ settings.host || t('libredbStudio.settings.unknownHost') }}</dd>
-          <dt>{{ t('libredbStudio.settings.chart') }}</dt>
-          <dd>{{ settings.app ? t('libredbStudio.settings.chartValue', { chartVersion: settings.app.chartVersion, appVersion: settings.app.appVersion }) : t('libredbStudio.settings.noApp') }}</dd>
-          <dt>{{ t('libredbStudio.settings.signIn') }}</dt>
-          <dd>{{ record.sso ? t('libredbStudio.settings.ssoOn', { client: record.sso.client }) : t('libredbStudio.settings.ssoOff') }}</dd>
+          <dt>{{ t('libredbStudio.settings.host', {}, true) }}</dt>
+          <dd>{{ settings.host || t('libredbStudio.settings.unknownHost', {}, true) }}</dd>
+          <dt>{{ t('libredbStudio.settings.chart', {}, true) }}</dt>
+          <dd>{{ settings.app ? t('libredbStudio.settings.chartValue', { chartVersion: settings.app.chartVersion, appVersion: settings.app.appVersion }, true) : t('libredbStudio.settings.noApp', {}, true) }}</dd>
+          <dt>{{ t('libredbStudio.settings.signIn', {}, true) }}</dt>
+          <dd>{{ record.sso ? t('libredbStudio.settings.ssoOn', { client: record.sso.client }, true) : t('libredbStudio.settings.ssoOff', {}, true) }}</dd>
         </dl>
         <section
           v-if="settings.app"
           class="mb-20"
           data-testid="libredb-settings-namespaces"
         >
-          <h3>{{ t('libredbStudio.setup.form.namespaces') }}</h3>
+          <h3>{{ t('libredbStudio.setup.form.namespaces', {}, true) }}</h3>
           <LabeledSelect
             :value="namespaces"
             class="mb-10"
@@ -276,7 +276,7 @@ export default defineComponent({
             class="text-error"
             data-testid="libredb-settings-namespaces-error"
           >
-            {{ t(`libredbStudio.setup.form.errors.${ namespacesError }`) }}
+            {{ t(`libredbStudio.setup.form.errors.${ namespacesError }`, {}, true) }}
           </p>
           <button
             type="button"
@@ -285,7 +285,7 @@ export default defineComponent({
             data-testid="libredb-settings-save"
             @click="save"
           >
-            {{ t('libredbStudio.settings.save') }}
+            {{ t('libredbStudio.settings.save', {}, true) }}
           </button>
         </section>
         <section
@@ -293,8 +293,8 @@ export default defineComponent({
           class="mb-20"
           data-testid="libredb-settings-sso"
         >
-          <h3>{{ t('libredbStudio.settings.ssoTitle') }}</h3>
-          <p>{{ t('libredbStudio.settings.ssoIntro') }}</p>
+          <h3>{{ t('libredbStudio.settings.ssoTitle', {}, true) }}</h3>
+          <p>{{ t('libredbStudio.settings.ssoIntro', {}, true) }}</p>
           <SetupChecks :checks="settings.sso.checks" />
           <template v-if="settings.sso.canUseSso">
             <button
@@ -305,14 +305,14 @@ export default defineComponent({
               data-testid="libredb-settings-sso-start"
               @click="askSso"
             >
-              {{ t('libredbStudio.settings.enableSso') }}
+              {{ t('libredbStudio.settings.enableSso', {}, true) }}
             </button>
             <div
               v-else
               data-testid="libredb-settings-sso-confirm"
             >
-              <p>{{ t('libredbStudio.settings.redirectConfirm', { uri: redirectUri }) }}</p>
-              <p>{{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }) }}</p>
+              <p>{{ t('libredbStudio.settings.redirectConfirm', { uri: redirectUri }, true) }}</p>
+              <p>{{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }, true) }}</p>
               <button
                 type="button"
                 class="btn role-primary mr-10"
@@ -320,7 +320,7 @@ export default defineComponent({
                 data-testid="libredb-settings-sso-confirm-button"
                 @click="turnOnSso"
               >
-                {{ t('libredbStudio.settings.confirm') }}
+                {{ t('libredbStudio.settings.confirm', {}, true) }}
               </button>
               <button
                 type="button"
@@ -329,13 +329,13 @@ export default defineComponent({
                 data-testid="libredb-settings-sso-cancel"
                 @click="cancelSso"
               >
-                {{ t('libredbStudio.settings.cancel') }}
+                {{ t('libredbStudio.settings.cancel', {}, true) }}
               </button>
             </div>
           </template>
         </section>
         <section data-testid="libredb-settings-uninstall">
-          <h3>{{ t('libredbStudio.settings.uninstallTitle') }}</h3>
+          <h3>{{ t('libredbStudio.settings.uninstallTitle', {}, true) }}</h3>
           <Banner
             color="warning"
             :label="t('libredbStudio.settings.uninstallWarning', { namespace })"
@@ -353,7 +353,7 @@ export default defineComponent({
             data-testid="libredb-settings-uninstall-button"
             @click="uninstall"
           >
-            {{ t('libredbStudio.settings.uninstall') }}
+            {{ t('libredbStudio.settings.uninstall', {}, true) }}
           </button>
         </section>
       </template>

@@ -143,11 +143,11 @@ export default defineComponent({
   <div class="libredb-setup">
     <header>
       <div class="title">
-        <h1>{{ t('libredbStudio.setup.title') }}</h1>
+        <h1>{{ t('libredbStudio.setup.title', {}, true) }}</h1>
       </div>
     </header>
     <p class="mb-20">
-      {{ t('libredbStudio.setup.intro') }}
+      {{ t('libredbStudio.setup.intro', {}, true) }}
     </p>
     <Loading v-if="!preflight" />
     <template v-else>
@@ -166,7 +166,7 @@ export default defineComponent({
           data-testid="libredb-setup-check-again"
           @click="check"
         >
-          {{ t('libredbStudio.setup.checkAgain') }}
+          {{ t('libredbStudio.setup.checkAgain', {}, true) }}
         </button>
         <router-link
           v-if="alreadySetUp"
@@ -174,7 +174,7 @@ export default defineComponent({
           :to="settingsRoute"
           data-testid="libredb-setup-go-settings"
         >
-          {{ t('libredbStudio.settings.label') }}
+          {{ t('libredbStudio.settings.label', {}, true) }}
         </router-link>
       </div>
       <form
@@ -242,7 +242,7 @@ export default defineComponent({
           v-if="form.sso && redirectUri"
           data-testid="libredb-setup-redirect"
         >
-          {{ t('libredbStudio.setup.form.redirect', { uri: redirectUri }) }}
+          {{ t('libredbStudio.setup.form.redirect', { uri: redirectUri }, true) }}
         </p>
         <Banner
           v-if="!form.sso"
@@ -259,7 +259,7 @@ export default defineComponent({
             v-for="reason in errorReasons"
             :key="reason"
           >
-            {{ t(`libredbStudio.setup.form.errors.${ reason }`) }}
+            {{ t(`libredbStudio.setup.form.errors.${ reason }`, {}, true) }}
           </li>
         </ul>
         <button
@@ -267,7 +267,7 @@ export default defineComponent({
           class="btn role-primary"
           data-testid="libredb-setup-install"
         >
-          {{ t('libredbStudio.setup.form.install') }}
+          {{ t('libredbStudio.setup.form.install', {}, true) }}
         </button>
       </form>
       <template v-else>
@@ -290,13 +290,13 @@ export default defineComponent({
             target="_blank"
             rel="noopener noreferrer nofollow"
             data-testid="libredb-setup-open"
-          >{{ t('libredbStudio.status.open') }}</a>
+          >{{ t('libredbStudio.status.open', {}, true) }}</a>
           <router-link
             class="btn role-secondary"
             :to="settingsRoute"
             data-testid="libredb-setup-settings"
           >
-            {{ t('libredbStudio.settings.label') }}
+            {{ t('libredbStudio.settings.label', {}, true) }}
           </router-link>
         </div>
         <div
@@ -312,7 +312,7 @@ export default defineComponent({
             class="text-error"
             data-testid="libredb-setup-failure"
           >
-            {{ t(`libredbStudio.setup.failure.${ result.failure.reason }`, result.failure.args) }}
+            {{ t(`libredbStudio.setup.failure.${ result.failure.reason }`, result.failure.args, true) }}
           </p>
           <button
             type="button"
@@ -320,7 +320,7 @@ export default defineComponent({
             data-testid="libredb-setup-retry"
             @click="check"
           >
-            {{ t('libredbStudio.setup.checkAgain') }}
+            {{ t('libredbStudio.setup.checkAgain', {}, true) }}
           </button>
         </div>
       </template>

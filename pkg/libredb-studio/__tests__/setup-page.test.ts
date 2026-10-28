@@ -13,7 +13,8 @@ jest.mock('../services/setup/install', () => ({ ...jest.requireActual('../servic
 const preflightMock = runPreflight as jest.Mock;
 const installMock = installStudio as jest.Mock;
 
-const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args ? JSON.stringify(args) : '' }`;
+// Arguments show as JSON, none as nothing; whether a text was asked for raw is checked on its own
+const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args && Object.keys(args).length ? JSON.stringify(args) : '' }`;
 
 const PREFLIGHT: PreflightResult = {
   checks: [
@@ -340,6 +341,46 @@ describe('setup page', () => {
 });
 
 describe('setup components', () => {
+  // The shell's t escapes HTML unless asked for raw, and text interpolation would show the escape
+  // itself, so every message rendered as text is asked for raw; Vue escapes text on its own.
+  it('render their messages as text, asking t for raw text', () => {
+    const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+
+    mount(SetupChecks, {
+      props: {
+        checks: [{
+          id: 'storageClass', state: 'ok', reason: 'ok', args: { name: 'local-path' }
+        }]
+      },
+      global: { mocks: { t: raw } }
+    });
+    mount(StepList, {
+      props: {
+        steps:  [{ step: 'rancherCA', state: 'done' }],
+        undone: [{
+          undo: 'navLink', outcome: 'kept', failure: { reason: 'notManaged' }
+        }]
+      },
+      global: { mocks: { t: raw } },
+    });
+
+    expect(raw.mock.calls.length).toBeGreaterThan(0);
+    expect(raw.mock.calls.filter((call) => call[2] !== true)).toStrictEqual([]);
+  });
+
+  it('show an apostrophe as an apostrophe', () => {
+    const wrapper = mount(SetupChecks, {
+      props: {
+        checks: [{
+          id: 'storageClass', state: 'ok', reason: 'ok', args: { name: 'local-path' }
+        }]
+      },
+      global: { mocks: { t: (_key: string, _args: unknown, isRaw: boolean) => (isRaw ? 'Studio\'s volume' : 'Studio&#39;s volume') } },
+    });
+
+    expect(wrapper.text()).toBe('Studio\'s volume');
+  });
+
   it('marks each check by its state', () => {
     const wrapper = mount(SetupChecks, {
       props: {

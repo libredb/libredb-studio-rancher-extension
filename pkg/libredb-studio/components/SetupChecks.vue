@@ -39,7 +39,7 @@ export default defineComponent({
       :data-testid="`libredb-check-${ check.id }`"
     >
       <i :class="['icon', icon(check)]" />
-      <span>{{ t(`libredbStudio.setup.checks.${ check.id }.${ check.reason }`, check.args) }}</span>
+      <span>{{ t(`libredbStudio.setup.checks.${ check.id }.${ check.reason }`, check.args, true) }}</span>
     </li>
   </ul>
 </template>
