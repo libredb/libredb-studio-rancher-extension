@@ -12,7 +12,9 @@ import { PRODUCT_NAME, SETUP_ROUTE } from '../config';
 import { failureOf } from '../services/setup/failure';
 import { namespacesError } from '../services/setup/form';
 import { RECORD_CONFIGMAP, STUDIO_NAMESPACE } from '../services/setup/names';
-import { enableSso, loadSettings, saveNamespaces, uninstallStudio } from '../services/setup/settings';
+import {
+  disableSso, enableSso, loadSettings, rotateClientSecret, rotationFailure, saveNamespaces, uninstallStudio
+} from '../services/setup/settings';
 import type { UndoEvent } from '../services/setup/cleanup';
 import type { StepView } from '../services/setup/install';
 import type {
@@ -21,10 +23,14 @@ import type {
 import type { SetupRecord } from '../services/setup/values';
 import type { StoreLike } from '../services/types';
 
+type ChangeKind = 'namespaces' | 'sso' | 'rotate' | 'ssoOff' | 'uninstall';
+
 /**
  * F7, Studio's settings: its state and the aggregation warning, the namespaces it discovers, single
- * sign-on for a Studio installed with its own sign-in, and uninstall after the release name is
- * typed by hand. Each change is shown step by step, and the page reloads after it.
+ * sign-on (turned on for a Studio installed with its own sign-in; once on, its client secret rotated
+ * or single sign-on turned off again by a Rancher administrator, each after the OIDC client's name is
+ * typed by hand), and uninstall after the release name is typed by hand. Each change is shown step
+ * by step, and the page reloads after it.
  */
 export default defineComponent({
   name: 'LibreDBSettings',
@@ -40,8 +46,10 @@ export default defineComponent({
       confirm:       '',
       confirmingSso: false,
       ownersTrusted: false,
+      rotateConfirm: '',
+      ssoOffConfirm: '',
       busy:          false,
-      kind:          undefined as 'namespaces' | 'sso' | 'uninstall' | undefined,
+      kind:          undefined as ChangeKind | undefined,
       steps:         [] as StepView[],
       undone:        [] as UndoEvent[],
       result:        undefined as ChangeResult | undefined,
@@ -76,6 +84,37 @@ export default defineComponent({
       return !!this.record && this.confirm.trim() === this.record.release.name;
     },
 
+    rotateConfirmed(): boolean {
+      return !!this.record?.sso && this.rotateConfirm.trim() === this.record.sso.client;
+    },
+
+    ssoOffConfirmed(): boolean {
+      return !!this.record?.sso && this.ssoOffConfirm.trim() === this.record.sso.client;
+    },
+
+    /** Whether the change stopped before any step or removal began, so that nothing was changed */
+    untouched(): boolean {
+      const result = this.result;
+
+      return !!result && !result.ok && !!result.failure && !result.failedStep && !result.undone.length && this.steps.every((item) => item.state === 'pending');
+    },
+
+    /** The banner that ends a change: done, refused before anything changed, or how far it got */
+    resultLabel(): string {
+      const result = this.result as ChangeResult;
+      let key = `failed.${ this.kind }`;
+
+      if (result.ok) {
+        key = `done.${ this.kind }`;
+      } else if (this.untouched) {
+        key = 'refused';
+      } else if (this.kind === 'rotate') {
+        key = `failed.${ rotationFailure(result) }`;
+      }
+
+      return this.t(`libredbStudio.settings.${ key }`, key === 'failed.rotateRestart' ? { namespace: this.namespace } : {}, true);
+    },
+
     setupRoute(): Record<string, unknown> {
       return { name: SETUP_ROUTE, params: { cluster: this.cluster, product: PRODUCT_NAME } };
     },
@@ -97,7 +136,7 @@ export default defineComponent({
       });
     },
 
-    start(kind: 'namespaces' | 'sso' | 'uninstall', steps: ChangeStepId[]): ChangeOptions {
+    start(kind: ChangeKind, steps: ChangeStepId[]): ChangeOptions {
       this.busy = true;
       this.kind = kind;
       this.result = undefined;
@@ -118,6 +157,8 @@ export default defineComponent({
       this.result = result;
       this.busy = false;
       this.confirm = '';
+      this.rotateConfirm = '';
+      this.ssoOffConfirm = '';
 
       return this.load();
     },
@@ -160,6 +201,23 @@ export default defineComponent({
         .then(this.finish, this.broke);
     },
 
+    rotate(): Promise<void> {
+      const options = this.start('rotate', ['regenerate', 'oidcSecret', 'restart']);
+
+      return rotateClientSecret(this.$store as StoreLike, this.cluster, this.record as SetupRecord, this.settings?.app as AppInfo, this.rotateConfirm, options)
+        .then(this.finish, this.broke);
+    },
+
+    turnOffSso(): Promise<void> {
+      const record = this.record as SetupRecord;
+      const options = this.start('ssoOff', ['upgrade', 'removeOidcClient', 'removeOidcSecret', 'removeRancherCA', 'saveRecord']);
+
+      // Exactly what the page showed: the name typed by hand and the namespaces to discover
+      const confirmed = { name: this.ssoOffConfirm, namespaces: record.namespaces.slice() };
+
+      return disableSso(this.$store as StoreLike, this.cluster, record, this.settings?.app as AppInfo, confirmed, options).then(this.finish, this.broke);
+    },
+
     uninstall(): Promise<void> {
       const options = this.start('uninstall', []);
 
@@ -181,7 +239,7 @@ export default defineComponent({
       v-else-if="!settings.canChange"
       color="warning"
       data-testid="libredb-settings-not-owner"
-      :label="t('libredbStudio.settings.notOwner')"
+      :label="t('libredbStudio.settings.notOwner', {}, true)"
     />
     <template v-else>
       <StudioStatus
@@ -193,13 +251,13 @@ export default defineComponent({
         v-if="settings.aggregation && settings.aggregation.state !== 'ok'"
         color="warning"
         data-testid="libredb-settings-aggregation"
-        :label="t(`libredbStudio.setup.checks.aggregation.${ settings.aggregation.reason }`)"
+        :label="t(`libredbStudio.setup.checks.aggregation.${ settings.aggregation.reason }`, {}, true)"
       />
       <Banner
         v-if="settings.inProject"
         color="error"
         data-testid="libredb-settings-in-project"
-        :label="t('libredbStudio.settings.inProject', { namespace })"
+        :label="t('libredbStudio.settings.inProject', { namespace }, true)"
       />
       <template v-if="kind">
         <StepList
@@ -211,7 +269,7 @@ export default defineComponent({
           v-if="result"
           :color="result.ok ? 'success' : 'error'"
           data-testid="libredb-settings-result"
-          :label="t(`libredbStudio.settings.${ result.ok ? 'done' : 'failed' }.${ kind }`)"
+          :label="resultLabel"
         />
         <p
           v-if="result && result.failure && !result.failedStep"
@@ -225,19 +283,19 @@ export default defineComponent({
         v-if="settings.recordProblem"
         color="error"
         data-testid="libredb-settings-untrusted"
-        :label="t('libredbStudio.setup.failure.untrustedRecord', { field: settings.recordProblem })"
+        :label="t('libredbStudio.setup.failure.untrustedRecord', { field: settings.recordProblem }, true)"
       />
       <Banner
         v-else-if="settings.recordUnreadable"
         color="warning"
         data-testid="libredb-settings-unreadable"
-        :label="t('libredbStudio.settings.recordUnreadable', { namespace, name: recordName })"
+        :label="t('libredbStudio.settings.recordUnreadable', { namespace, name: recordName }, true)"
       />
       <Banner
         v-else-if="!record && (settings.app || settings.link)"
         color="info"
         data-testid="libredb-settings-other"
-        :label="t('libredbStudio.settings.otherInstall')"
+        :label="t('libredbStudio.settings.otherInstall', {}, true)"
       />
       <div
         v-else-if="!record"
@@ -245,7 +303,7 @@ export default defineComponent({
       >
         <Banner
           color="info"
-          :label="t('libredbStudio.settings.notSetUp')"
+          :label="t('libredbStudio.settings.notSetUp', {}, true)"
         />
         <router-link
           class="btn role-primary"
@@ -260,7 +318,7 @@ export default defineComponent({
           v-if="settings.app && !settings.app.managed"
           color="warning"
           data-testid="libredb-settings-unmarked"
-          :label="t('libredbStudio.settings.unmarked')"
+          :label="t('libredbStudio.settings.unmarked', {}, true)"
         />
         <dl
           class="summary"
@@ -283,7 +341,7 @@ export default defineComponent({
             :value="namespaces"
             class="mb-10"
             :multiple="true"
-            :label="t('libredbStudio.setup.form.namespaces')"
+            :label="t('libredbStudio.setup.form.namespaces', {}, true)"
             :tooltip="t('libredbStudio.setup.form.namespacesHelp')"
             :options="settings.namespaces"
             data-testid="libredb-settings-namespaces-select"
@@ -358,16 +416,87 @@ export default defineComponent({
             </div>
           </template>
         </section>
+        <section
+          v-if="settings.app && record.sso"
+          class="mb-20"
+          data-testid="libredb-settings-sso-on"
+        >
+          <h3>{{ t('libredbStudio.settings.ssoTitle', {}, true) }}</h3>
+          <p class="mb-20">
+            {{ t('libredbStudio.settings.ssoOnIntro', { client: record.sso.client }, true) }}
+          </p>
+          <Banner
+            v-if="!settings.ssoAdmin"
+            color="info"
+            data-testid="libredb-settings-sso-admin-only"
+            :label="t('libredbStudio.settings.ssoAdminOnly', {}, true)"
+          />
+          <template v-else>
+            <div
+              class="mb-20"
+              data-testid="libredb-settings-rotate"
+            >
+              <h4>{{ t('libredbStudio.settings.rotateTitle', {}, true) }}</h4>
+              <p class="mb-10">
+                {{ t('libredbStudio.settings.rotateIntro', {}, true) }}
+              </p>
+              <Banner
+                color="warning"
+                :label="t('libredbStudio.settings.rotateWarning', { client: record.sso.client }, true)"
+              />
+              <LabeledInput
+                v-model:value="rotateConfirm"
+                class="mb-10"
+                :label="t('libredbStudio.settings.typeName', { name: record.sso.client }, true)"
+                data-testid="libredb-settings-rotate-name"
+              />
+              <button
+                type="button"
+                class="btn role-primary"
+                :disabled="busy || !rotateConfirmed"
+                data-testid="libredb-settings-rotate-button"
+                @click="rotate"
+              >
+                {{ t('libredbStudio.settings.rotate', {}, true) }}
+              </button>
+            </div>
+            <div data-testid="libredb-settings-sso-off">
+              <h4>{{ t('libredbStudio.settings.turnOffTitle', {}, true) }}</h4>
+              <Banner
+                color="warning"
+                :label="t('libredbStudio.settings.turnOffWarning', { client: record.sso.client, namespace }, true)"
+              />
+              <p class="mt-10 mb-10">
+                {{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }, true) }}
+              </p>
+              <LabeledInput
+                v-model:value="ssoOffConfirm"
+                class="mb-10"
+                :label="t('libredbStudio.settings.typeName', { name: record.sso.client }, true)"
+                data-testid="libredb-settings-sso-off-name"
+              />
+              <button
+                type="button"
+                class="btn bg-error"
+                :disabled="busy || !ssoOffConfirmed"
+                data-testid="libredb-settings-sso-off-button"
+                @click="turnOffSso"
+              >
+                {{ t('libredbStudio.settings.turnOff', {}, true) }}
+              </button>
+            </div>
+          </template>
+        </section>
         <section data-testid="libredb-settings-uninstall">
           <h3>{{ t('libredbStudio.settings.uninstallTitle', {}, true) }}</h3>
           <Banner
             color="warning"
-            :label="t('libredbStudio.settings.uninstallWarning', { namespace })"
+            :label="t('libredbStudio.settings.uninstallWarning', { namespace }, true)"
           />
           <LabeledInput
             v-model:value="confirm"
             class="mb-10"
-            :label="t('libredbStudio.settings.typeName', { name: record.release.name })"
+            :label="t('libredbStudio.settings.typeName', { name: record.release.name }, true)"
             data-testid="libredb-settings-uninstall-name"
           />
           <button

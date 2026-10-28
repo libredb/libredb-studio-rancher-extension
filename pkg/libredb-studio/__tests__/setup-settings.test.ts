@@ -2,9 +2,9 @@ import { fakeStore, httpError, reviewAnswer, Request } from './helpers/fake-stor
 import {
   CLUSTER, RANCHER_CA, SSAR_DOWN, SSAR_LOCAL, readyCluster, reviewOf
 } from './helpers/cluster';
-import { FakeKube, KUBE_REQUESTS, secretDataReads } from './helpers/kube';
+import { FakeKube, KUBE_REQUESTS, Reaction, secretDataReads } from './helpers/kube';
 import {
-  enableSso, loadSettings, recordProblem, saveNamespaces, uninstallStudio, AppInfo, ChangeOptions
+  disableSso, enableSso, loadSettings, recordProblem, rotateClientSecret, rotationFailure, saveNamespaces, uninstallStudio, AppInfo, ChangeOptions, ChangeStepId
 } from '../services/setup/settings';
 import { chartValues, serializeRecord, SetupRecord } from '../services/setup/values';
 import type { RancherContext } from '../services/setup/preflight';
@@ -17,13 +17,45 @@ const CA_PATH = `${ NS }/configmaps/libredb-studio-rancher-ca`;
 const SECRET_PATH = `${ NS }/secrets/libredb-studio-oidc`;
 const INGRESS = `${ K8S }/apis/networking.k8s.io/v1/namespaces/libredb-studio/ingresses/libredb-studio`;
 const APP = `${ K8S }/apis/catalog.cattle.io/v1/namespaces/libredb-studio/apps/libredb-studio`;
+const DEPLOYMENT = `${ K8S }/apis/apps/v1/namespaces/libredb-studio/deployments/libredb-studio`;
 const UPGRADE = `${ K8S }/v1/catalog.cattle.io.clusterrepos/rancher-partner-charts?action=upgrade`;
 const UNINSTALL = `${ K8S }/v1/catalog.cattle.io.apps/libredb-studio/libredb-studio?action=uninstall`;
 const CLIENT = `${ LOCAL }/apis/management.cattle.io/v3/oidcclients/libredb-studio-c-m-1`;
 const CLIENT_SECRET = `${ LOCAL }/api/v1/namespaces/cattle-oidc-client-secrets/secrets/client-abc`;
 const NAVLINK = `${ K8S }/apis/ui.cattle.io/v1/navlinks/libredb-studio.libredb-studio`;
 const SECRET_B64 = btoa('not-a-real-client-secret');
+const NEW_SECRET_B64 = btoa('not-a-real-new-client-secret');
+const REGENERATE = 'cattle.io/oidc-client-secret-regenerate';
+const RESTARTED_AT = 'kubectl.kubernetes.io/restartedAt';
 const MANAGED = { 'app.kubernetes.io/managed-by': 'libredb-studio-rancher-extension', 'app.kubernetes.io/part-of': 'libredb-studio' };
+
+/**
+ * What Rancher's OIDC client controller does for the regenerate annotation (v2.15.2,
+ * pkg/controllers/management/oidcprovider): a new value under each named key of the client's
+ * Secret, then the annotation removed from the client.
+ */
+const regenerates: Reaction = (client, kube) => {
+  const annotations = client.metadata?.annotations || {};
+  const source = kube.objects.get(CLIENT_SECRET);
+
+  if (annotations[REGENERATE] && source) {
+    kube.objects.set(CLIENT_SECRET, {
+      ...source,
+      metadata: { ...source.metadata, resourceVersion: `${ source.metadata?.resourceVersion }-regenerated` },
+      data:     { 'client-secret-1': NEW_SECRET_B64 },
+    });
+    delete annotations[REGENERATE];
+  }
+};
+
+/** The Deployment controller rolling out every replica of a new generation at once */
+const rollsOut: Reaction = (deployment) => {
+  Object.assign(deployment, {
+    status: {
+      observedGeneration: deployment.metadata?.generation, replicas: 1, updatedReplicas: 1, availableReplicas: 1, readyReplicas: 1
+    }
+  });
+};
 
 const RECORD: SetupRecord = {
   version: 1,
@@ -101,15 +133,19 @@ interface Installed {
   chart?: Record<string, unknown>;
   /** Store reads to answer differently from a ready cluster */
   find?: Record<string, unknown>;
+  /** What Rancher does when the OIDC client changes, regenerating its secret for the annotation by default */
+  clientUpdate?: Reaction;
 }
 
 /**
  * A cluster with Studio installed by the wizard: the wizard's objects live in a fake API server with
- * its labels, each upgrade makes a new revision in the Helm state given, and the uninstall makes
- * the app and the chart's NavLink go away.
+ * its labels, beside Studio's Deployment and, with single sign-on, Rancher's OIDC client and the
+ * Secret it keeps the client secret in. Each upgrade makes a new revision in the Helm state given,
+ * a restart rolls the Deployment out at once, and the uninstall makes the app and the chart's
+ * NavLink go away.
  */
 function installed({
-  record = RECORD, override = [], upgradeStates = ['deployed'], annotations = MANAGED, ingressHost = HOST, chart, find = {}
+  record = RECORD, override = [], upgradeStates = ['deployed'], annotations = MANAGED, ingressHost = HOST, chart, find = {}, clientUpdate = regenerates
 }: Installed = {}) {
   const setup = readyCluster();
   const holder = {} as { store: ReturnType<typeof fakeStore>, kube: FakeKube };
@@ -144,15 +180,41 @@ function installed({
       },
       data: { 'setup.json': serializeRecord(record) }
     },
-    [INGRESS]: { metadata: { name: 'libredb-studio' }, spec: { rules: [{ host: ingressHost }] } },
+    [INGRESS]:    { metadata: { name: 'libredb-studio' }, spec: { rules: [{ host: ingressHost }] } },
+    [DEPLOYMENT]: {
+      metadata: { name: 'libredb-studio', generation: 4 },
+      spec:     { replicas: 1 },
+      status:   {
+        observedGeneration: 4, replicas: 1, updatedReplicas: 1, availableReplicas: 1, readyReplicas: 1
+      },
+    },
     ...(record.sso ? {
-      [CA_PATH]: labelled('libredb-studio-rancher-ca'), [SECRET_PATH]: labelled('libredb-studio-oidc'), [CLIENT]: labelled('libredb-studio-c-m-1', { status: { clientID: 'client-abc' } })
+      [CA_PATH]:     labelled('libredb-studio-rancher-ca'),
+      [SECRET_PATH]: {
+        metadata: {
+          name: 'libredb-studio-oidc', labels: MANAGED, resourceVersion: 's1'
+        },
+        type: 'Opaque',
+        data: { 'oidc-client-id': btoa('client-abc'), 'oidc-client-secret': SECRET_B64 },
+      },
+      [CLIENT]: {
+        metadata: {
+          name: 'libredb-studio-c-m-1', labels: MANAGED, resourceVersion: 'c1'
+        },
+        spec:   { redirectURIs: ['https://studio.example.com/api/auth/oidc/callback'] },
+        // Rancher lists each key its Secret holds for the client
+        status: { clientID: 'client-abc', clientSecrets: { 'client-secret-1': { lastFiveCharacters: 'ecret' } } },
+      },
+      [CLIENT_SECRET]: { metadata: { name: 'client-abc', resourceVersion: 'k1' }, data: { 'client-secret-1': SECRET_B64 } },
     } : {}),
   }, {
     [CLIENT]: (created, kube) => {
       Object.assign(created, { status: { clientID: 'client-abc' } });
-      kube.objects.set(CLIENT_SECRET, { metadata: { name: 'client-abc' }, data: { 'client-secret-1': SECRET_B64 } });
+      kube.objects.set(CLIENT_SECRET, { metadata: { name: 'client-abc', resourceVersion: 'k1' }, data: { 'client-secret-1': SECRET_B64 } });
     },
+  }, {
+    [CLIENT]:     clientUpdate,
+    [DEPLOYMENT]: rollsOut,
   });
   holder.store = fakeStore({
     ...setup,
@@ -178,6 +240,13 @@ function installed({
 const lines = (store: ReturnType<typeof fakeStore>) => store.calls.map((call: Request) => `${ call.method } ${ call.url }`);
 const bodyOf = (store: ReturnType<typeof fakeStore>, line: string, nth = 0) => store.calls.filter((call: Request) => `${ call.method } ${ call.url }` === line)[nth]?.data as Record<string, unknown>;
 const changes = (store: ReturnType<typeof fakeStore>) => lines(store).filter((line) => !line.startsWith('GET') && !line.endsWith('selfsubjectaccessreviews'));
+/** How each step ended, in order */
+const finished = (run: { events: unknown[] }) => run.events
+  .map((event) => event as { step: string, state: string })
+  .filter(({ state }) => state !== 'running')
+  .map(({ step, state }) => `${ step } ${ state }`);
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const NOT_ADMIN: Answers = [[SSAR_LOCAL, reviewAnswer(false)]];
 
 function options(): ChangeOptions & { events: unknown[], undone: unknown[] } {
   const events: unknown[] = [];
@@ -226,6 +295,8 @@ describe('the setup record', () => {
 
       await expect(saveNamespaces(store, CLUSTER, record, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(refused);
       await expect(enableSso(store, CLUSTER, record, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(refused);
+      await expect(rotateClientSecret(store, CLUSTER, record, APP_INFO, record.sso?.client as string, options())).resolves.toStrictEqual(refused);
+      await expect(disableSso(store, CLUSTER, record, APP_INFO, { name: record.sso?.client as string, namespaces: ['team-a'] }, options())).resolves.toStrictEqual(refused);
       await expect(uninstallStudio(store, CLUSTER, record, record.release.name, options())).resolves.toStrictEqual(refused);
       expect(store.calls).toStrictEqual([]);
     });
@@ -275,6 +346,25 @@ describe('loading Studio\'s settings', () => {
 
   it('offers nothing about single sign-on once it is on', async() => {
     expect((await loadSettings(installed({ record: SSO_RECORD }).store, CLUSTER)).sso).toBeUndefined();
+  });
+
+  it('asks Rancher, once single sign-on is on, whether the user may rotate the client secret and delete the client', async() => {
+    const { store } = installed({ record: SSO_RECORD });
+
+    expect((await loadSettings(store, CLUSTER)).ssoAdmin).toBe(true);
+    expect(store.calls.filter((call) => call.url.startsWith(LOCAL)).map(reviewOf)).toStrictEqual([
+      {
+        group: 'management.cattle.io', resource: 'oidcclients', verb: 'patch', name: 'libredb-studio-c-m-1'
+      },
+      {
+        group: 'management.cattle.io', resource: 'oidcclients', verb: 'delete', name: 'libredb-studio-c-m-1'
+      },
+      {
+        namespace: 'cattle-oidc-client-secrets', resource: 'secrets', verb: 'get'
+      },
+    ]);
+    expect((await loadSettings(installed({ record: SSO_RECORD, override: [[SSAR_LOCAL, reviewAnswer(false)]] }).store, CLUSTER)).ssoAdmin).toBe(false);
+    expect((await loadSettings(installed().store, CLUSTER)).ssoAdmin).toBeUndefined();
   });
 
   it('reads nothing more for someone who does not own the cluster', async() => {
@@ -711,6 +801,592 @@ describe('turning single sign-on on', () => {
     expect(result).toMatchObject({
       ok: false, failedStep: 'saveRecord', undone: []
     });
+  });
+});
+
+describe('rotating the client secret', () => {
+  /** The OIDC client's name, typed by hand */
+  const TYPED = 'libredb-studio-c-m-1';
+  const inProject = (kube: FakeKube) => kube.objects.set(NS, {
+    metadata: {
+      name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' }
+    }
+  });
+  /**
+   * A sign-in to Studio: Rancher notes on the client when its secret was last used (v2.15.2,
+   * pkg/oidc/provider/token.go), which gives the client a new version
+   */
+  const signIn = (kube: FakeKube) => {
+    const client = kube.objects.get(CLIENT);
+
+    kube.objects.set(CLIENT, {
+      ...client,
+      metadata: {
+        ...client?.metadata, resourceVersion: `${ client?.metadata?.resourceVersion }-used`, annotations: { 'cattle.io.oidc-client-secret-used-client-secret-1': '1793180000' }
+      },
+    });
+  };
+  /** Studio with single sign-on, where a sign-in lands right before each of the client's first `count` patches, with `meanwhile` */
+  const racing = (count: number, meanwhile: (kube: FakeKube) => void = () => undefined) => {
+    let left = count;
+    const holder: { kube?: FakeKube } = {};
+    const setup = installed({
+      record:   SSO_RECORD,
+      override: [[`PATCH ${ CLIENT }`, (request: Request) => {
+        const kube = holder.kube as FakeKube;
+
+        if (left > 0) {
+          left -= 1;
+          signIn(kube);
+          meanwhile(kube);
+        }
+
+        return kube.handle(request);
+      }]],
+    });
+
+    holder.kube = setup.kube;
+
+    return setup;
+  };
+  const patchedVersions = (store: ReturnType<typeof fakeStore>) => store.calls
+    .filter((call) => `${ call.method } ${ call.url }` === `PATCH ${ CLIENT }`)
+    .map((call) => (call.data as { metadata: { resourceVersion: string } }).metadata.resourceVersion);
+
+  it('has Rancher regenerate the secret, writes the new one over Studio\'s Secret, and restarts Studio', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+    const run = options();
+    const result = await rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, ` ${ TYPED } `, run);
+
+    expect(result).toStrictEqual({ ok: true, undone: [] });
+    expect(finished(run)).toStrictEqual(['regenerate done', 'oidcSecret done', 'restart done']);
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`, `PUT ${ SECRET_PATH }`, `PATCH ${ DEPLOYMENT }`]);
+    // Rancher's annotation, on the version of the client that was checked
+    expect(bodyOf(store, `PATCH ${ CLIENT }`)).toStrictEqual({ metadata: { resourceVersion: 'c1', annotations: { [REGENERATE]: 'client-secret-1' } } });
+    expect(kube.objects.get(SECRET_PATH)).toStrictEqual({
+      apiVersion: 'v1',
+      kind:       'Secret',
+      metadata:   {
+        name: 'libredb-studio-oidc', labels: MANAGED, resourceVersion: 's1'
+      },
+      type: 'Opaque',
+      data: { 'oidc-client-id': btoa('client-abc'), 'oidc-client-secret': NEW_SECRET_B64 },
+    });
+    // What kubectl rollout restart does: a new pod template, so every pod starts again with the new secret
+    expect(bodyOf(store, `PATCH ${ DEPLOYMENT }`)).toStrictEqual({ spec: { template: { metadata: { annotations: { [RESTARTED_AT]: expect.stringMatching(ISO_TIME) } } } } });
+    expect(store.calls.find((call) => call.method === 'PATCH')?.headers).toStrictEqual({ 'Content-Type': 'application/merge-patch+json' });
+    expect(lines(store)).not.toContain(`PUT ${ RECORD_PATH }`);
+    expect(JSON.stringify({ result, events: run.events })).not.toContain(NEW_SECRET_B64);
+  });
+
+  it('reads no Secret\'s data but the new client secret it copies', async() => {
+    const { store } = installed({ record: SSO_RECORD });
+
+    await rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options());
+
+    expect(lines(store)).toContain(`GET ${ SECRET_PATH }`);
+    expect(secretDataReads(store.calls)).toStrictEqual([CLIENT_SECRET]);
+  });
+
+  it('writes Studio\'s Secret afresh when it is gone', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+
+    kube.objects.delete(SECRET_PATH);
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({ ok: true, undone: [] });
+    expect(bodyOf(store, `POST ${ NS }/secrets`)).toMatchObject({ metadata: { name: 'libredb-studio-oidc', labels: MANAGED } });
+    expect(kube.objects.get(SECRET_PATH)).toMatchObject({ data: { 'oidc-client-secret': NEW_SECRET_B64 } });
+  });
+
+  it('asks for the OIDC client\'s name typed by hand, since it signs everyone out of Studio once', async() => {
+    const { store } = installed({ record: SSO_RECORD });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, 'libredb-studio', options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'notConfirmedClient' }, undone: []
+    });
+    expect(store.calls).toStrictEqual([]);
+  });
+
+  it('refuses when single sign-on is not on', async() => {
+    const { store } = installed();
+
+    await expect(rotateClientSecret(store, CLUSTER, RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'ssoNotOn' }, undone: []
+    });
+    expect(store.calls).toStrictEqual([]);
+  });
+
+  it('refuses anyone but a Rancher administrator', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: NOT_ADMIN });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'ssoNeedsAdmin' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('acts on nothing older than the page showed', async() => {
+    // Another administrator turned single sign-on off after this page loaded
+    const off = installed();
+
+    await expect(rotateClientSecret(off.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(off.store)).toStrictEqual([]);
+
+    const upgraded = installed({ record: SSO_RECORD });
+
+    await expect(rotateClientSecret(upgraded.store, CLUSTER, SSO_RECORD, { ...APP_INFO, revision: 2 }, TYPED, options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(upgraded.store)).toStrictEqual([]);
+  });
+
+  it('writes no client secret into Studio\'s namespace once it is in a project', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+
+    inProject(kube);
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual(IN_PROJECT);
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('changes no OIDC client without the extension\'s labels, and says when the client is gone', async() => {
+    const unlabelled = installed({ record: SSO_RECORD });
+
+    unlabelled.kube.objects.set(CLIENT, { metadata: { name: 'libredb-studio-c-m-1', resourceVersion: 'c2' }, status: { clientID: 'client-abc' } });
+
+    await expect(rotateClientSecret(unlabelled.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'clientNotManaged', args: { name: 'libredb-studio-c-m-1' } }, undone: []
+    });
+    expect(changes(unlabelled.store)).toStrictEqual([]);
+
+    const gone = installed({ record: SSO_RECORD });
+
+    gone.kube.objects.delete(CLIENT);
+
+    await expect(rotateClientSecret(gone.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'clientMissing', args: { name: 'libredb-studio-c-m-1' } }, undone: []
+    });
+    expect(changes(gone.store)).toStrictEqual([]);
+  });
+
+  it('writes into no Secret without the extension\'s labels, and has nothing regenerated for it', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+
+    kube.objects.set(SECRET_PATH, { metadata: { name: 'libredb-studio-oidc', resourceVersion: 's2' } });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'objectNotManaged', args: { namespace: 'libredb-studio', name: 'libredb-studio-oidc' } }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('refuses a client without an id, and stops before the annotation at one without a secret in Rancher', async() => {
+    const noId = installed({ record: SSO_RECORD });
+
+    noId.kube.objects.set(CLIENT, {
+      metadata: {
+        name: 'libredb-studio-c-m-1', labels: MANAGED, resourceVersion: 'c1'
+      }
+    });
+
+    await expect(rotateClientSecret(noId.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'noClientId' }, undone: []
+    });
+    expect(changes(noId.store)).toStrictEqual([]);
+
+    const noSecret = installed({ record: SSO_RECORD });
+
+    noSecret.kube.objects.delete(CLIENT_SECRET);
+
+    await expect(rotateClientSecret(noSecret.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'noClientSecret' }, undone: []
+    });
+    expect(changes(noSecret.store)).toStrictEqual([]);
+  });
+
+  it('refuses a client that no longer holds the secret Studio was given, which Rancher would not regenerate', async() => {
+    // Rancher regenerates only the keys a client holds, and a client can be moved to client-secret-2 by hand
+    const moved = installed({ record: SSO_RECORD });
+
+    moved.kube.objects.set(CLIENT, { ...moved.kube.objects.get(CLIENT), status: { clientID: 'client-abc', clientSecrets: { 'client-secret-2': { lastFiveCharacters: 'ecret' } } } });
+
+    await expect(rotateClientSecret(moved.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'secretKeyMissing', args: { name: 'libredb-studio-c-m-1' } }, undone: []
+    });
+    expect(changes(moved.store)).toStrictEqual([]);
+
+    // Rancher lists no secrets at all once the client holds none
+    const none = installed({ record: SSO_RECORD });
+
+    none.kube.objects.set(CLIENT, { ...none.kube.objects.get(CLIENT), status: { clientID: 'client-abc' } });
+
+    await expect(rotateClientSecret(none.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'secretKeyMissing', args: { name: 'libredb-studio-c-m-1' } }, undone: []
+    });
+    expect(changes(none.store)).toStrictEqual([]);
+  });
+
+  it('reads the client again right before the annotation, and tries again on the version a sign-in to Studio gave it meanwhile', async() => {
+    const { store, kube } = racing(1);
+    const run = options();
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, run)).resolves.toStrictEqual({ ok: true, undone: [] });
+    expect(finished(run)).toStrictEqual(['regenerate done', 'oidcSecret done', 'restart done']);
+    expect(patchedVersions(store)).toStrictEqual(['c1', 'c1-used']);
+    expect(kube.objects.get(SECRET_PATH)).toMatchObject({ data: { 'oidc-client-secret': NEW_SECRET_B64 } });
+  });
+
+  it('gives up after three tries that sign-ins overtook, with Rancher\'s secret unchanged', async() => {
+    const { store, kube } = racing(3);
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'request', args: { detail: 'HTTP 409: the object has been modified' } }, undone: []
+    });
+    expect(patchedVersions(store)).toStrictEqual(['c1', 'c1-used', 'c1-used-used']);
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`, `PATCH ${ CLIENT }`, `PATCH ${ CLIENT }`]);
+    expect(kube.objects.get(CLIENT_SECRET)).toMatchObject({ data: { 'client-secret-1': SECRET_B64 } });
+    expect(kube.objects.get(SECRET_PATH)).toMatchObject({ data: { 'oidc-client-secret': SECRET_B64 } });
+  });
+
+  it('checks the extension\'s labels on each read, so a client that lost them meanwhile gets no annotation', async() => {
+    const { store, kube } = racing(1, (changed) => {
+      const client = changed.objects.get(CLIENT);
+
+      changed.objects.set(CLIENT, { ...client, metadata: { ...client?.metadata, labels: {} } });
+    });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'clientNotManaged', args: { name: 'libredb-studio-c-m-1' } }, undone: []
+    });
+    // Only the try the sign-in overtook, which Rancher refused
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`]);
+    expect(kube.objects.get(CLIENT)?.metadata?.annotations).not.toHaveProperty([REGENERATE]);
+  });
+
+  it('tries no more when Rancher refuses the annotation, which leaves its secret as it was', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD, override: [[`PATCH ${ CLIENT }`, httpError(403, 'oidcclients is forbidden')]] });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'request', args: { detail: 'HTTP 403: oidcclients is forbidden' } }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`]);
+    expect(kube.objects.get(CLIENT_SECRET)).toMatchObject({ data: { 'client-secret-1': SECRET_B64 } });
+  });
+
+  it('cannot tell whether Rancher took the annotation when the patch failed without Rancher refusing it', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: [[`PATCH ${ CLIENT }`, httpError(503, 'upstream timed out')]] });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'regenerateUnknown', args: { detail: 'HTTP 503: upstream timed out' } }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`]);
+  });
+
+  it('cannot tell whether Rancher regenerated the secret when the client cannot be read while it waits', async() => {
+    let reads = 0;
+    const holder: { kube?: FakeKube } = {};
+    // The check before the steps and the read before the annotation answer; every read after it fails
+    const { store, kube } = installed({
+      record:   SSO_RECORD,
+      override: [[`GET ${ CLIENT }`, (request: Request) => {
+        reads += 1;
+
+        return reads <= 2 ? (holder.kube as FakeKube).handle(request) : httpError(500, 'etcd unavailable');
+      }]],
+    });
+
+    holder.kube = kube;
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'regenerateUnknown', args: { detail: 'HTTP 500: etcd unavailable' } }, undone: []
+    });
+    // Rancher did regenerate it here, which is why this never says the secret is unchanged
+    expect(kube.objects.get(CLIENT_SECRET)).toMatchObject({ data: { 'client-secret-1': NEW_SECRET_B64 } });
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`]);
+  });
+
+  it('copies nothing when Rancher took the annotation away without a new secret', async() => {
+    const { store } = installed({
+      record:       SSO_RECORD,
+      clientUpdate: (client) => {
+        delete client.metadata?.annotations?.[REGENERATE];
+      },
+    });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'notRegenerated' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`]);
+  });
+
+  it('gives up when Rancher does not regenerate the secret in time', async() => {
+    const { store } = installed({ record: SSO_RECORD, clientUpdate: () => undefined });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'regenerate', failure: { reason: 'notRegenerated' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([`PATCH ${ CLIENT }`]);
+  });
+
+  it('says only the status when the new secret cannot be written, and restarts nothing', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: [[`PUT ${ SECRET_PATH }`, httpError(409, 'not-a-real-new-client-secret was refused')]] });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'oidcSecret', failure: { reason: 'request', args: { detail: 'HTTP 409' } }, undone: []
+    });
+    expect(lines(store)).not.toContain(`PATCH ${ DEPLOYMENT }`);
+  });
+
+  it('waits until every replica runs the new pod template', async() => {
+    const rolling = (status: Record<string, number>) => ({
+      metadata: { generation: 5 }, spec: { replicas: 1 }, status
+    });
+    const { store } = installed({
+      record:   SSO_RECORD,
+      override: [[`GET ${ DEPLOYMENT }`, sequence(
+        { metadata: { generation: 5 }, spec: { replicas: 1 } },
+        rolling({
+          observedGeneration: 4, replicas: 1, updatedReplicas: 1, availableReplicas: 1
+        }),
+        rolling({
+          observedGeneration: 5, replicas: 1, updatedReplicas: 0, availableReplicas: 1
+        }),
+        rolling({
+          observedGeneration: 5, replicas: 2, updatedReplicas: 1, availableReplicas: 1
+        }),
+        rolling({
+          observedGeneration: 5, replicas: 1, updatedReplicas: 1, availableReplicas: 0
+        }),
+        {
+          metadata: { generation: 5 },
+          status:   {
+            observedGeneration: 5, replicas: 1, updatedReplicas: 1, availableReplicas: 1
+          }
+        },
+      )]],
+    });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({ ok: true, undone: [] });
+    expect(lines(store).filter((line) => line === `GET ${ DEPLOYMENT }`)).toHaveLength(6);
+  });
+
+  it('says so when Studio does not finish restarting in time', async() => {
+    const stuck = {
+      metadata: { generation: 5 },
+      spec:     { replicas: 1 },
+      status:   {
+        observedGeneration: 5, replicas: 2, updatedReplicas: 1, availableReplicas: 1
+      },
+    };
+    const { store } = installed({ record: SSO_RECORD, override: [[`GET ${ DEPLOYMENT }`, stuck]] });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'restart', failure: { reason: 'notRestarted', args: { namespace: 'libredb-studio' } }, undone: []
+    });
+  });
+
+  it('waits for nothing it cannot tell apart: a restart answered without a generation fails', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: [[`PATCH ${ DEPLOYMENT }`, {}]] });
+
+    await expect(rotateClientSecret(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'restart', failure: { reason: 'notRestarted', args: { namespace: 'libredb-studio' } }, undone: []
+    });
+    expect(lines(store)).not.toContain(`GET ${ DEPLOYMENT }`);
+  });
+
+  it('tells how far a rotation that failed in a step got', () => {
+    const failedAt = (failedStep: ChangeStepId, reason: string) => rotationFailure({
+      ok: false, failedStep, failure: { reason }, undone: []
+    });
+
+    // Before Rancher took the annotation, its secret is as it was
+    expect(['request', 'clientMissing', 'clientNotManaged', 'noClientId', 'secretKeyMissing', 'noClientSecret'].map((reason) => failedAt('regenerate', reason)))
+      .toStrictEqual(Array(6).fill('rotateUnchanged'));
+    // Rancher may have a new secret that Studio does not
+    expect([failedAt('regenerate', 'notRegenerated'), failedAt('regenerate', 'regenerateUnknown'), failedAt('oidcSecret', 'request')]).toStrictEqual(['rotate', 'rotate', 'rotate']);
+    // Studio has the new secret, but has not restarted with it
+    expect([failedAt('restart', 'notRestarted'), failedAt('restart', 'request')]).toStrictEqual(['rotateRestart', 'rotateRestart']);
+  });
+});
+
+describe('turning single sign-on off', () => {
+  /** What the administrator typed and saw: the OIDC client's name and the namespaces to discover */
+  const TYPED = { name: 'libredb-studio-c-m-1', namespaces: ['team-a'] };
+  const labelsOnly = (labels?: Record<string, string>) => ({ metadata: { name: 'libredb-studio-c-m-1', ...(labels ? { labels } : {}) } });
+
+  it('upgrades Studio to its own sign-in, deletes the OIDC client, the credentials and Rancher\'s CA, then updates the record', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+    const run = options();
+    const result = await disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, { ...TYPED, name: ' libredb-studio-c-m-1 ' }, run);
+
+    expect(result).toStrictEqual({
+      ok: true, undone: [], record: RECORD
+    });
+    expect(finished(run)).toStrictEqual(['upgrade done', 'removeOidcClient done', 'removeOidcSecret done', 'removeRancherCA done', 'saveRecord done']);
+    // Studio's own sign-in, without the access review, so discovered databases go to its admin only
+    expect(bodyOf(store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ values: chartValues(RECORD) }] });
+    expect(Object.keys((bodyOf(store, `POST ${ UPGRADE }`) as { charts: { values: Record<string, unknown> }[] }).charts[0].values)).not.toContain('accessReview');
+    // Studio stops using the client before it goes
+    expect(changes(store)).toStrictEqual([`POST ${ UPGRADE }`, `DELETE ${ CLIENT }`, `DELETE ${ SECRET_PATH }`, `DELETE ${ CA_PATH }`, `PUT ${ RECORD_PATH }`]);
+    expect(kube.objects.get(RECORD_PATH)).toMatchObject({ metadata: { resourceVersion: '7' }, data: { 'setup.json': serializeRecord(RECORD) } });
+    expect(store.calls.filter((call) => call.url.endsWith('selfsubjectaccessreviews')).map(reviewOf)).toContainEqual({
+      group: 'management.cattle.io', resource: 'oidcclients', verb: 'delete', name: 'libredb-studio-c-m-1'
+    });
+  });
+
+  it('asks for the OIDC client\'s name typed by hand', async() => {
+    const { store } = installed({ record: SSO_RECORD });
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, { ...TYPED, name: 'libredb-studio' }, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'notConfirmedClient' }, undone: []
+    });
+    expect(store.calls).toStrictEqual([]);
+  });
+
+  it('refuses when single sign-on is not on', async() => {
+    const { store } = installed();
+
+    await expect(disableSso(store, CLUSTER, RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'ssoNotOn' }, undone: []
+    });
+    expect(store.calls).toStrictEqual([]);
+  });
+
+  it('refuses anyone but a Rancher administrator', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: NOT_ADMIN });
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'ssoNeedsAdmin' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('acts on nothing older than the page showed', async() => {
+    const off = installed();
+
+    await expect(disableSso(off.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(off.store)).toStrictEqual([]);
+
+    const upgraded = installed({ record: SSO_RECORD });
+
+    await expect(disableSso(upgraded.store, CLUSTER, SSO_RECORD, { ...APP_INFO, revision: 2 }, TYPED, options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(upgraded.store)).toStrictEqual([]);
+  });
+
+  it('changes nothing while Studio\'s namespace is in a project', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+
+    kube.objects.set(NS, {
+      metadata: {
+        name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' }
+      }
+    });
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual(IN_PROJECT);
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('refuses without a host it can read from Studio\'s Ingress, and keeps the one it serves whatever the record says', async() => {
+    const noHost = installed({ record: SSO_RECORD, override: [[`GET ${ INGRESS }`, httpError(404)]] });
+
+    await expect(disableSso(noHost.store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'noHost' }, undone: []
+    });
+    expect(changes(noHost.store)).toStrictEqual([]);
+
+    const record = { ...SSO_RECORD, host: 'phish.example.net' };
+    const moved = installed({ record });
+    const result = await disableSso(moved.store, CLUSTER, record, APP_INFO, TYPED, options());
+
+    expect(result.record?.host).toBe(HOST);
+    expect((bodyOf(moved.store, `POST ${ UPGRADE }`) as { charts: { values: { ingress: { hosts: { host: string }[] } } }[] }).charts[0].values.ingress.hosts[0].host).toBe(HOST);
+  });
+
+  it('carries forward only the namespaces the administrator confirmed, revalidated', async() => {
+    const record = { ...SSO_RECORD, namespaces: ['team-a', 'kube-system'] };
+    const { store } = installed({ record });
+    const result = await disableSso(store, CLUSTER, record, APP_INFO, TYPED, options());
+
+    expect(result.record?.namespaces).toStrictEqual(['team-a']);
+    expect(bodyOf(store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ values: { discovery: { kubernetes: { namespaces: ['team-a'] } } } }] });
+
+    const unseen = installed({ record: SSO_RECORD });
+
+    await expect(disableSso(unseen.store, CLUSTER, SSO_RECORD, APP_INFO, { ...TYPED, namespaces: ['someone-elses'] }, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'badNamespaces' }, undone: []
+    });
+    expect(changes(unseen.store)).toStrictEqual([]);
+  });
+
+  it.each([
+    ['the OIDC client', CLIENT, { reason: 'clientNotManaged', args: { name: 'libredb-studio-c-m-1' } }],
+    ['the client credentials', SECRET_PATH, { reason: 'objectNotManaged', args: { namespace: 'libredb-studio', name: 'libredb-studio-oidc' } }],
+    ['Rancher\'s CA', CA_PATH, { reason: 'objectNotManaged', args: { namespace: 'libredb-studio', name: 'libredb-studio-rancher-ca' } }],
+  ])('changes nothing when %s does not carry the extension\'s labels', async(_, path, failure) => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+
+    kube.objects.set(path, labelsOnly({ 'app.kubernetes.io/managed-by': 'someone-else' }));
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failure, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('keeps an object whose labels went between the check and its deletion, and the record with it', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: [[`GET ${ CLIENT }`, sequence(labelsOnly(MANAGED), labelsOnly())]] });
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'removeOidcClient', failure: { reason: 'notManaged' }, undone: []
+    });
+    expect(lines(store)).not.toContain(`DELETE ${ CLIENT }`);
+    expect(lines(store)).not.toContain(`PUT ${ RECORD_PATH }`);
+  });
+
+  it('goes past what is already gone', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+    const run = options();
+
+    kube.objects.delete(CLIENT);
+    kube.objects.delete(CA_PATH);
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, run)).resolves.toStrictEqual({
+      ok: true, undone: [], record: RECORD
+    });
+    expect(finished(run)).toStrictEqual(['upgrade done', 'removeOidcClient skipped', 'removeOidcSecret done', 'removeRancherCA skipped', 'saveRecord done']);
+  });
+
+  it('deletes nothing and keeps the record when the upgrade fails', async() => {
+    const { store } = installed({ record: SSO_RECORD, upgradeStates: ['failed'] });
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'upgrade', failure: { reason: 'helmFailed' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([`POST ${ UPGRADE }`]);
+  });
+
+  it('keeps the record when a deletion fails, so that turning it off again finishes the job', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: [[`DELETE ${ SECRET_PATH }`, httpError(500, 'not-a-real-client-secret')]] });
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'removeOidcSecret', failure: { reason: 'request', args: { detail: 'HTTP 500' } }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([`POST ${ UPGRADE }`, `DELETE ${ CLIENT }`, `DELETE ${ SECRET_PATH }`]);
+  });
+
+  it('says so when Studio took its own sign-in but the record could not be updated', async() => {
+    const { store } = installed({ record: SSO_RECORD, override: [[`PUT ${ RECORD_PATH }`, httpError(409, 'conflict')]] });
+
+    await expect(disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options())).resolves.toMatchObject({
+      ok: false, failedStep: 'saveRecord', failure: { reason: 'request', args: { detail: 'HTTP 409: conflict' } }
+    });
+  });
+
+  it('reads no Secret\'s data, only the labels of what it deletes', async() => {
+    const { store } = installed({ record: SSO_RECORD });
+
+    await disableSso(store, CLUSTER, SSO_RECORD, APP_INFO, TYPED, options());
+
+    expect(lines(store)).toContain(`GET ${ SECRET_PATH }`);
+    expect(secretDataReads(store.calls)).toStrictEqual([]);
   });
 });
 

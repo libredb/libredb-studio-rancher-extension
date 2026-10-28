@@ -2,7 +2,7 @@ import { CNPG_CLUSTER_TYPE } from '../../config';
 import { StudioLink, usableToURL } from '../navlink';
 import type { StoreLike } from '../types';
 import { StepFailure } from './failure';
-import { kube, kubeGet } from './k8s';
+import { kube, kubeGet, kubePatch } from './k8s';
 import {
   CHART_NAME, CHART_REPO, MANAGED_LABELS, RELEASE_NAME, STUDIO_NAMESPACE, isManaged
 } from './names';
@@ -218,6 +218,55 @@ export async function waitForStudio(store: StoreLike, cluster: string, options: 
   return {
     name, toURL, namespace: STUDIO_NAMESPACE, deploymentName: RELEASE_NAME
   };
+}
+
+/** The pod template annotation kubectl rollout restart sets, and Rancher's Redeploy with it */
+export const RESTARTED_AT = 'kubectl.kubernetes.io/restartedAt';
+/** Studio's pods start in well under a minute; a pull or a slow volume takes longer */
+const RESTART_TIMEOUT_MS = 300000;
+const RESTART_POLL_MS = 2000;
+
+interface Deployment {
+  metadata?: { generation?: number };
+  spec?: { replicas?: number };
+  status?: { observedGeneration?: number, replicas?: number, updatedReplicas?: number, availableReplicas?: number };
+}
+
+/**
+ * Whether a Deployment has rolled out a generation, as kubectl rollout status decides it: the
+ * generation observed, every replica updated, none of the old ones left, and the new ones available.
+ */
+function rolledOut(deployment: Deployment | undefined, generation: number): boolean {
+  const status = deployment?.status;
+  const updated = status?.updatedReplicas || 0;
+
+  return (status?.observedGeneration || 0) >= generation && updated >= (deployment?.spec?.replicas ?? 1) &&
+    (status?.replicas || 0) <= updated && (status?.availableReplicas || 0) >= updated;
+}
+
+/**
+ * Restarts Studio, so that its pods read again the Secrets their environment comes from, and waits
+ * until every replica runs the new pod template. Helm keeps the annotation on later upgrades, so they
+ * restart nothing for it.
+ */
+export async function restartStudio(store: StoreLike, cluster: string, options: WaitOptions): Promise<void> {
+  const path = `/apis/apps/v1/namespaces/${ STUDIO_NAMESPACE }/deployments/${ RELEASE_NAME }`;
+  const now = options.now || Date.now;
+  const restarted = await kubePatch<Deployment | undefined>(store, cluster, path, { spec: { template: { metadata: { annotations: { [RESTARTED_AT]: new Date(now()).toISOString() } } } } });
+  const generation = restarted?.metadata?.generation;
+  const notRestarted = new StepFailure('notRestarted', { namespace: STUDIO_NAMESPACE });
+
+  // Without the generation the patch made, an old rollout could pass for this one
+  if (!generation) {
+    throw notRestarted;
+  }
+
+  const done = await waitFor(async() => (rolledOut(await kubeGet<Deployment>(store, cluster, path), generation) || undefined),
+    RESTART_POLL_MS, RESTART_TIMEOUT_MS, options);
+
+  if (!done) {
+    throw notRestarted;
+  }
 }
 
 /** A list of what may live in a namespace beside Studio; `controlled`: what goes with its controller */

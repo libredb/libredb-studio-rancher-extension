@@ -1,6 +1,6 @@
 import { fakeStore, httpError } from './helpers/fake-store';
 import {
-  canI, findAllIfVisible, findIfVisible, k8sPath, kube, kubeDelete, kubeGet, kubeMetadata, LOCAL_CLUSTER, METADATA_ONLY
+  canI, findAllIfVisible, findIfVisible, k8sPath, kube, kubeDelete, kubeGet, kubeMetadata, kubePatch, LOCAL_CLUSTER, MERGE_PATCH, METADATA_ONLY
 } from '../services/setup/k8s';
 
 describe('kubernetes requests through Rancher', () => {
@@ -46,6 +46,18 @@ describe('kubernetes requests through Rancher', () => {
       url, method: 'get', data: undefined, redirectUnauthorized: false, headers: { accept: METADATA_ONLY }
     });
     expect(store.calls[0].headers).toStrictEqual({ accept: METADATA_ONLY });
+  });
+
+  it('changes part of an object with a JSON merge patch, which carries only what changes', async() => {
+    const url = '/k8s/clusters/c/apis/apps/v1/namespaces/libredb-studio/deployments/libredb-studio';
+    const patch = { spec: { template: { metadata: { annotations: { a: 'b' } } } } };
+    const store = fakeStore({ requests: [[`PATCH ${ url }`, { metadata: { generation: 4 } }]] });
+
+    expect(MERGE_PATCH).toBe('application/merge-patch+json');
+    await expect(kubePatch(store, 'c', '/apis/apps/v1/namespaces/libredb-studio/deployments/libredb-studio', patch)).resolves.toStrictEqual({ metadata: { generation: 4 } });
+    expect(store.dispatch).toHaveBeenCalledWith('cluster/request', {
+      url, method: 'patch', data: patch, redirectUnauthorized: false, headers: { 'Content-Type': MERGE_PATCH }
+    });
   });
 
   it('sends no headers of its own on any other request', async() => {

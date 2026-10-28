@@ -49,6 +49,15 @@ libredbStudio:
     enableSso: Turn on single sign-on
     redirectConfirm: Rancher will send people back to {uri} after they sign in. Confirm only if this is the address of LibreDB Studio.
     ssoNamespaces: 'LibreDB Studio will go on discovering these namespaces: {namespaces}.'
+    ssoOnIntro: People sign in with their Rancher account, through the OIDC client {client}.
+    ssoAdminOnly: Rotating the client secret and turning single sign-on off need a Rancher administrator.
+    rotateTitle: Client secret
+    rotateIntro: Owners of this cluster can read the OIDC client secret in LibreDB Studio's namespace. Rotate it when one of them leaves, or whenever it may have been exposed.
+    rotate: Rotate the client secret
+    rotateWarning: "Rancher replaces the client secret of {client} at once, and LibreDB Studio restarts with the new one. Signing in fails until it has restarted, and the restart signs everyone out of LibreDB Studio once: people still signed in to Rancher are signed in again automatically, everyone else sees Rancher's sign-in page."
+    turnOffTitle: Turn single sign-on off
+    turnOffWarning: Turning single sign-on off upgrades LibreDB Studio to its own sign-in with the access review off, so that only its admin sees the discovered databases, then deletes the OIDC client {client} from Rancher, and the client credentials and Rancher's CA from the namespace {namespace}.
+    turnOff: Turn off single sign-on
     confirm: Confirm
     cancel: Cancel
     uninstallTitle: Uninstall
@@ -56,13 +65,20 @@ libredbStudio:
     typeName: Type {name} to confirm
     uninstall: Uninstall
     uninstalledTitle: What became of each part
+    refused: Nothing was changed.
     done:
       namespaces: LibreDB Studio now discovers the chosen namespaces.
       sso: Single sign-on through Rancher is on.
+      rotate: The client secret is rotated, and LibreDB Studio runs with the new one. Open LibreDB Studio and sign in to check.
+      ssoOff: Single sign-on is off. Sign in to LibreDB Studio as admin@libredb.org with its generated admin password, which a cluster owner can read from /app/data/auth-bootstrap.json in the pod; the pod prints it to its log only on the start that generates it.
       uninstall: LibreDB Studio is uninstalled.
     failed:
       namespaces: The namespaces could not be changed.
       sso: Single sign-on could not be turned on.
+      rotate: The client secret could not be rotated completely, and until it is, people may not be able to sign in. Rotate it again.
+      rotateUnchanged: The client secret was not rotated. Rancher's client secret did not change, so signing in goes on as before.
+      rotateRestart: LibreDB Studio has the new client secret but has not finished restarting; its workload in the {namespace} namespace says why, and signing in works once it has.
+      ssoOff: Single sign-on could not be turned off completely. Each step shows how far it went; turn it off again to finish.
       uninstall: LibreDB Studio could not be uninstalled completely.
   setup:
     title: Set up LibreDB Studio
@@ -159,6 +175,11 @@ libredbStudio:
       ready: Wait for LibreDB Studio and its link
       upgrade: Upgrade LibreDB Studio and wait for it
       saveRecord: Update the setup record
+      regenerate: Have Rancher generate a new client secret
+      restart: Restart LibreDB Studio and wait for it
+      removeOidcClient: Delete the OIDC client from Rancher
+      removeOidcSecret: Delete the client credentials from the namespace {namespace}
+      removeRancherCA: Delete Rancher's CA from the namespace {namespace}
     state:
       pending: Waiting
       running: Running
@@ -207,5 +228,15 @@ libredbStudio:
       changedSinceLoad: LibreDB Studio or its setup record changed since this page loaded. Check the settings again before you change them.
       notAcknowledged: Single sign-on needs the administrator's acknowledgement of what owners of this cluster can then do in Rancher.
       mayBeLeft: An OIDC client {name} is left behind if single sign-on was ever turned on here. Checking for it and deleting it need a Rancher administrator or the global role Manage OIDC Clients.
+      notRegenerated: Rancher did not generate a new client secret in time. If it does later, people cannot sign in until LibreDB Studio has the new one, so rotate it again.
+      notRestarted: LibreDB Studio did not finish restarting in time. Its workload in the {namespace} namespace says why.
+      clientMissing: The OIDC client {name} is not in Rancher. Turn single sign-on off, then on again, to register LibreDB Studio afresh.
+      clientNotManaged: The OIDC client {name} does not carry this extension's labels, so Settings does not change or delete it. Someone may have changed it; a Rancher administrator can check it in Users & Authentication, OIDC Apps.
+      objectNotManaged: The object {name} in the namespace {namespace} does not carry this extension's labels, so Settings does not change or delete it. Someone may have changed it; a cluster owner can check it.
+      ssoNeedsAdmin: Rotating the client secret and turning single sign-on off need a Rancher administrator.
+      ssoNotOn: Single sign-on is not on.
+      notConfirmedClient: Type the OIDC client's name to confirm.
+      secretKeyMissing: The OIDC client {name} no longer holds the secret LibreDB Studio was given (client-secret-1), so Settings cannot rotate it. Turn single sign-on off, then on again, to register LibreDB Studio afresh.
+      regenerateUnknown: Whether Rancher generated a new client secret is not known ({detail}). If it did, people cannot sign in until LibreDB Studio has the new one, so rotate it again.
 product:
   libredb: LibreDB Studio

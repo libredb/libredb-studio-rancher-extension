@@ -6,16 +6,21 @@ import {
 } from './cleanup';
 import { Failure, failureOf, StepFailure } from './failure';
 import { isHostName, namespacesError } from './form';
-import { canI, findAllIfVisible, kubeGet, LOCAL_CLUSTER } from './k8s';
 import {
-  CHART_NAME, CHART_REPO, PROJECT_ANNOTATION, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  canI, findAllIfVisible, kubeGet, kubeMetadata, LOCAL_CLUSTER
+} from './k8s';
+import {
+  CHART_NAME, CHART_REPO, OIDC_CLIENT_SECRETS_NAMESPACE, OIDC_SECRET, PROJECT_ANNOTATION, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE,
+  isManaged, oidcClientName
 } from './names';
-import { copyClientSecret, createOidcClient, waitForClientId } from './oidc-client';
+import {
+  clientProblem, copyClientSecret, createOidcClient, oidcClientPath, regenerateClientSecret, waitForClientId, OidcClient
+} from './oidc-client';
 import {
   aggregationCheck, rancherContext, ssoChecks, Check, RancherContext
 } from './preflight';
 import { createConfigMap, readRecord, replaceRecord } from './record';
-import { releaseState, upgradeRelease, waitForRelease } from './release';
+import { releaseState, restartStudio, upgradeRelease, waitForRelease } from './release';
 import { runSteps, StepEvent } from './steps';
 import { oidcIssuer, sameRecord, SetupRecord, SsoRecord } from './values';
 import { OIDC_SCOPE_LISTS } from './versions';
@@ -57,9 +62,19 @@ export interface StudioSettings {
   inProject?: boolean;
   /** For a Studio without single sign-on: whether it can be turned on here, and with what */
   sso?: { checks: Check[], canUseSso: boolean, context: RancherContext };
+  /**
+   * For a Studio with single sign-on: whether the user may rotate the client secret and turn single
+   * sign-on off, which takes a Rancher administrator
+   */
+  ssoAdmin?: boolean;
 }
 
-export type ChangeStepId = 'oidcClient' | 'oidcSecret' | 'rancherCA' | 'upgrade' | 'saveRecord';
+/** The steps of turning single sign-on on, of rotating its client secret, and of turning it off */
+type SsoOnStepId = 'oidcClient' | 'oidcSecret' | 'rancherCA' | 'upgrade' | 'saveRecord';
+type RotateStepId = 'regenerate' | 'oidcSecret' | 'restart';
+type SsoOffStepId = 'upgrade' | 'removeOidcClient' | 'removeOidcSecret' | 'removeRancherCA' | 'saveRecord';
+
+export type ChangeStepId = SsoOnStepId | RotateStepId | SsoOffStepId;
 
 export interface ChangeOptions extends WaitOptions {
   onStep?: (event: StepEvent<ChangeStepId>) => void;
@@ -73,6 +88,22 @@ export interface ChangeResult {
   undone: UndoEvent[];
   /** The record as it now stands, after a change that went through */
   record?: SetupRecord;
+}
+
+/** Why a regenerate step failed when Rancher may have replaced the client secret all the same */
+const SECRET_MAY_HAVE_CHANGED = ['notRegenerated', 'regenerateUnknown'];
+
+/**
+ * How far a rotation that failed in a step got, as a key under libredbStudio.settings.failed:
+ * Rancher's client secret as it was, a new one Studio may not have, or Studio not yet restarted with
+ * the new one
+ */
+export function rotationFailure(result: ChangeResult): 'rotateUnchanged' | 'rotate' | 'rotateRestart' {
+  if (result.failedStep === 'restart') {
+    return 'rotateRestart';
+  }
+
+  return result.failedStep === 'regenerate' && !SECRET_MAY_HAVE_CHANGED.includes(result.failure?.reason as string) ? 'rotateUnchanged' : 'rotate';
 }
 
 /**
@@ -141,6 +172,30 @@ function refused(reason: string, args?: Record<string, string>): ChangeResult {
   };
 }
 
+const OIDC_SECRET_PATH = `/api/v1/namespaces/${ STUDIO_NAMESPACE }/secrets/${ OIDC_SECRET }`;
+const RANCHER_CA_PATH = `/api/v1/namespaces/${ STUDIO_NAMESPACE }/configmaps/${ RANCHER_CA_CONFIGMAP }`;
+
+/**
+ * Whether the user may rotate the OIDC client's secret and delete the client: change and delete it
+ * on Rancher's local cluster, and read the secrets Rancher keeps for it, which only a Rancher
+ * administrator can
+ */
+async function canManageClient(store: StoreLike, name: string): Promise<boolean> {
+  const allowed = await Promise.all([
+    canI(store, LOCAL_CLUSTER, {
+      group: 'management.cattle.io', resource: 'oidcclients', verb: 'patch', name
+    }),
+    canI(store, LOCAL_CLUSTER, {
+      group: 'management.cattle.io', resource: 'oidcclients', verb: 'delete', name
+    }),
+    canI(store, LOCAL_CLUSTER, {
+      namespace: OIDC_CLIENT_SECRETS_NAMESPACE, resource: 'secrets', verb: 'get'
+    }),
+  ]);
+
+  return allowed.every(Boolean);
+}
+
 export async function loadSettings(store: StoreLike, cluster: string): Promise<StudioSettings> {
   if (!await canI(store, cluster, {
     verb: '*', group: '*', resource: '*'
@@ -177,6 +232,7 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
     namespaces:  await visibleNamespaces(store),
     inProject:   await namespaceInProject(store, cluster),
     sso,
+    ssoAdmin:    record?.sso && !problem ? await canManageClient(store, record.sso.client) : undefined,
   };
 }
 
@@ -380,8 +436,8 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
   let clientId = '';
   let upgradeStarted = false;
 
-  const steps: ChangeStepId[] = ['oidcClient', 'oidcSecret', ...(sso.rancherCA ? ['rancherCA'] as ChangeStepId[] : []), 'upgrade', 'saveRecord'];
-  const failed = await runSteps<ChangeStepId>(steps, {
+  const steps: SsoOnStepId[] = ['oidcClient', 'oidcSecret', ...(sso.rancherCA ? ['rancherCA'] as SsoOnStepId[] : []), 'upgrade', 'saveRecord'];
+  const failed = await runSteps<SsoOnStepId>(steps, {
     oidcClient: async() => {
       await createOidcClient(store, changed, sso);
       created.push('oidcClient');
@@ -429,6 +485,212 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 
   return {
     ok: false, failedStep: failed.step, failure: failed.failure, undone
+  };
+}
+
+/**
+ * Rotates the OIDC client secret after the client's name was typed by hand, which needs a Rancher
+ * administrator: Rancher's regenerate annotation on the client the record names, the new secret
+ * copied over Studio's own Secret, then Studio restarted to take it. Rancher replaces the old secret
+ * at once, so a sign-in between that and Studio's restart fails, and the restart signs everyone out
+ * of Studio once, since its record of each person's groups lives in memory. The client and Studio's
+ * Secret change only while they carry the extension's labels, and nothing changes in a namespace
+ * moved into a project.
+ */
+export async function rotateClientSecret(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, confirm: string, options: ChangeOptions = {}): Promise<ChangeResult> {
+  const problem = recordProblem(record, cluster);
+
+  if (problem) {
+    return refused('untrustedRecord', { field: problem });
+  }
+
+  if (!record.sso) {
+    return refused('ssoNotOn');
+  }
+
+  const name = record.sso.client;
+
+  if (confirm.trim() !== name) {
+    return refused('notConfirmedClient');
+  }
+
+  if (!await canManageClient(store, name)) {
+    return refused('ssoNeedsAdmin');
+  }
+
+  if (!await unchangedRecord(store, cluster, record) || !await unchangedApp(store, cluster, app)) {
+    return refused('changedSinceLoad');
+  }
+
+  // The new secret goes into Studio's namespace, which project members must not read
+  if (await namespaceInProject(store, cluster)) {
+    return refused('inProject', { namespace: STUDIO_NAMESPACE });
+  }
+
+  // Checked again right before the annotation, which is what decides
+  const unusable = clientProblem(await kubeGet<OidcClient>(store, LOCAL_CLUSTER, oidcClientPath(name)), name);
+
+  if (unusable) {
+    return {
+      ok: false, failure: unusable, undone: []
+    };
+  }
+
+  // Its labels alone, so the old secret never reaches the browser
+  const secret = await kubeMetadata(store, cluster, OIDC_SECRET_PATH);
+
+  if (secret && !isManaged(secret.metadata?.labels)) {
+    return refused('objectNotManaged', { namespace: STUDIO_NAMESPACE, name: OIDC_SECRET });
+  }
+
+  let clientId = '';
+  const failed = await runSteps<RotateStepId>(['regenerate', 'oidcSecret', 'restart'], {
+    regenerate: async() => {
+      clientId = await regenerateClientSecret(store, name, options);
+
+      return 'done';
+    },
+    oidcSecret: async() => {
+      await copyClientSecret(store, cluster, clientId, options, secret);
+
+      return 'done';
+    },
+    restart: async() => {
+      await restartStudio(store, cluster, options);
+
+      return 'done';
+    },
+  }, options.onStep, ['oidcSecret']);
+
+  return failed ? {
+    ok: false, failedStep: failed.step, failure: failed.failure, undone: []
+  } : { ok: true, undone: [] };
+}
+
+/** What the administrator typed and saw before single sign-on goes: the client's name and the namespaces to discover */
+export interface SsoOffConfirmation {
+  name: string;
+  namespaces: string[];
+}
+
+/**
+ * The first single sign-on object that is there without the extension's labels, as the reason to
+ * change nothing: a record someone edited never steers a deletion to an object that is not ours.
+ */
+async function unmanagedSsoObject(store: StoreLike, cluster: string, client: string): Promise<Failure | undefined> {
+  const marked = async(target: string, path: string) => {
+    const found = await kubeMetadata(store, target, path);
+
+    return !found || isManaged(found.metadata?.labels);
+  };
+
+  if (!await marked(LOCAL_CLUSTER, oidcClientPath(client))) {
+    return { reason: 'clientNotManaged', args: { name: client } };
+  }
+
+  for (const [name, path] of [[OIDC_SECRET, OIDC_SECRET_PATH], [RANCHER_CA_CONFIGMAP, RANCHER_CA_PATH]]) {
+    if (!await marked(cluster, path)) {
+      return { reason: 'objectNotManaged', args: { namespace: STUDIO_NAMESPACE, name } };
+    }
+  }
+
+  return undefined;
+}
+
+/** A removal as a step: done when it removed the object, skipped when it was gone, failed otherwise */
+async function removalStep(remove: () => Promise<UndoEvent>): Promise<'done' | 'skipped'> {
+  const { outcome, failure } = await remove();
+
+  if (outcome === 'removed' || outcome === 'gone') {
+    return outcome === 'removed' ? 'done' : 'skipped';
+  }
+
+  throw new StepFailure((failure as Failure).reason, failure?.args);
+}
+
+/**
+ * Turns single sign-on off after the OIDC client's name was typed by hand, which needs a Rancher
+ * administrator: Studio is upgraded to its own sign-in with the access review off, so discovered
+ * databases go to its admin only, then the OIDC client, Studio's copy of its credentials and
+ * Rancher's CA are deleted, and the record follows last. Studio stops using the client before it
+ * goes; a step that fails keeps the record, so turning it off again finishes the job.
+ */
+export async function disableSso(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, confirmed: SsoOffConfirmation, options: ChangeOptions = {}): Promise<ChangeResult> {
+  const problem = recordProblem(record, cluster);
+
+  if (problem) {
+    return refused('untrustedRecord', { field: problem });
+  }
+
+  if (!record.sso) {
+    return refused('ssoNotOn');
+  }
+
+  const name = record.sso.client;
+
+  if (confirmed.name.trim() !== name) {
+    return refused('notConfirmedClient');
+  }
+
+  if (!await canManageClient(store, name)) {
+    return refused('ssoNeedsAdmin');
+  }
+
+  const live = await unchangedRecord(store, cluster, record);
+
+  if (!live || !await unchangedApp(store, cluster, app)) {
+    return refused('changedSinceLoad');
+  }
+
+  if (await namespaceInProject(store, cluster)) {
+    return refused('inProject', { namespace: STUDIO_NAMESPACE });
+  }
+
+  const host = await deployedHost(store, cluster);
+
+  if (!host) {
+    return refused('noHost');
+  }
+
+  // The namespaces the administrator confirmed, revalidated, never the record's carried forward
+  if (namespacesError(confirmed.namespaces, await visibleNamespaces(store))) {
+    return refused('badNamespaces');
+  }
+
+  const foreign = await unmanagedSsoObject(store, cluster, name);
+
+  if (foreign) {
+    return {
+      ok: false, failure: foreign, undone: []
+    };
+  }
+
+  const changed: SetupRecord = {
+    ...record, host, namespaces: [...new Set(confirmed.namespaces)].sort((a, b) => a.localeCompare(b))
+  };
+
+  delete changed.sso;
+
+  const failed = await runSteps<SsoOffStepId>(['upgrade', 'removeOidcClient', 'removeOidcSecret', 'removeRancherCA', 'saveRecord'], {
+    upgrade: async() => {
+      await upgradeTo(store, cluster, changed, options);
+
+      return 'done';
+    },
+    removeOidcClient: () => removalStep(() => removeOidcClient(store, name)),
+    removeOidcSecret: () => removalStep(() => removeOidcSecret(store, cluster)),
+    removeRancherCA:  () => removalStep(() => removeRancherCA(store, cluster)),
+    saveRecord:       async() => {
+      await replaceRecord(store, cluster, changed, live.resourceVersion);
+
+      return 'done';
+    },
+  }, options.onStep);
+
+  return failed ? {
+    ok: false, failedStep: failed.step, failure: failed.failure, undone: []
+  } : {
+    ok: true, undone: [], record: changed
   };
 }
 

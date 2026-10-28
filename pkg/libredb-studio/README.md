@@ -13,10 +13,12 @@ The setup checks the cluster first, then installs the LibreDB Studio partner cha
 With a Rancher administrator, it also registers LibreDB Studio as an OIDC client of Rancher, so people sign in with their Rancher account and open only the databases their own Rancher roles let them read; without one, LibreDB Studio keeps its own sign-in, and an administrator can turn single sign-on on later.
 Single sign-on is experimental: owners of the cluster that runs LibreDB Studio will be able to act in Rancher as any user who signs in to LibreDB Studio, so the administrator acknowledges that before it is turned on, and it belongs only on clusters whose owners are trusted that far.
 The Settings page changes the namespaces LibreDB Studio discovers, turns single sign-on on, and uninstalls LibreDB Studio after the release name is typed by hand.
+Once single sign-on is on, a Rancher administrator can rotate its client secret there, which restarts LibreDB Studio with the new one and signs everyone out of it once, or turn single sign-on off again, which upgrades LibreDB Studio back to its own sign-in and deletes the OIDC client.
+Both ask for the OIDC client's name typed by hand.
 
 It has no backend of its own: it works through Rancher's API as the signed-in user, never reads a database's Secret, and opens LibreDB Studio, installed in the same cluster, in a new tab.
-The only Secret value it reads is the OIDC client secret Rancher generates, once, for an administrator who sets up single sign-on, and it writes that secret straight into LibreDB Studio's own Secret without showing it.
-When it removes that Secret again, on an uninstall or after a failed setup, it reads the Secret's labels alone.
+The only Secret value it reads is the OIDC client secret Rancher generates, once each time an administrator sets up single sign-on or rotates the secret, and it writes that secret straight into LibreDB Studio's own Secret without showing it.
+When it replaces or removes that Secret, on a rotation, when single sign-on is turned off, on an uninstall or after a failed setup, it reads the Secret's labels alone.
 
 - Supported Rancher versions: 2.15 and later.
 - Rancher mode needs a LibreDB Studio chart and release that carry it: chart 0.1.107 or later, with LibreDB Studio after 1.1.0.
