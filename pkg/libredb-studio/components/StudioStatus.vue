@@ -9,6 +9,7 @@ const COLORS: Record<StudioStatus, string> = {
   ready:        'success',
   'not-ready':  'warning',
   unknown:      'info',
+  failed:       'warning',
 };
 
 /** The Databases page's header: is Studio set up in this cluster, is it running, where is it */

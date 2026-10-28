@@ -21,6 +21,12 @@ describe('navlink service', () => {
     expect(usableToURL({ metadata: { name: 'a' } })).toBeUndefined();
   });
 
+  it('refuses a toURL with a query or a fragment, which the Studio link could not extend', () => {
+    expect(usableToURL(navlink('a', { toURL: 'https://studio.example.com/?x=1' }))).toBeUndefined();
+    expect(usableToURL(navlink('a', { toURL: 'https://studio.example.com/#top' }))).toBeUndefined();
+    expect(usableToURL(navlink('a', { toURL: 'https://studio.example.com/base/' }))).toBe('https://studio.example.com/base/');
+  });
+
   it('picks the first usable link by name and counts the usable ones', () => {
     const selected = selectStudioLink([
       navlink('studio-b.libredb-studio', { toURL: 'https://b.example.com' }),
@@ -119,27 +125,108 @@ describe('access review service', () => {
     const first = ensureReview(store, 'c-1', 'ns', 'a');
     const second = ensureReview(store, 'c-1', 'ns', 'b');
 
-    ensureReview(store, 'c-1', 'ns', 'a');
-    expect(first).toBe(second);
-    await first;
+    expect(ensureReview(store, 'c-1', 'ns', 'a')).toBe(first);
+    expect(dispatch).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    await Promise.all([first, second]);
 
     expect(dispatch).toHaveBeenCalledTimes(2);
     await ensureReview(store, 'c-1', 'ns', 'a');
     expect(dispatch).toHaveBeenCalledTimes(2);
   });
 
-  it('counts a refusal, an error or an answer without status as denied', async() => {
+  it('counts a refusal or an answer without status as denied', async() => {
     const dispatch = jest.fn()
       .mockResolvedValueOnce(allowed(false))
-      .mockRejectedValueOnce(new Error('403'))
       .mockResolvedValueOnce({});
     const store = storeWith({}, dispatch);
 
     ensureReview(store, 'c-1', 'ns', 'a');
-    ensureReview(store, 'c-1', 'ns', 'b');
-    await ensureReview(store, 'c-1', 'ns', 'c');
+    await ensureReview(store, 'c-1', 'ns', 'b');
 
-    expect(['a', 'b', 'c'].map((s) => reviewState('c-1', 'ns', s))).toStrictEqual(['denied', 'denied', 'denied']);
+    expect(['a', 'b'].map((s) => reviewState('c-1', 'ns', s))).toStrictEqual(['denied', 'denied']);
+  });
+
+  it('records a review that could not be made as failed, not as denied', async() => {
+    const dispatch = jest.fn().mockRejectedValueOnce(new Error('network')).mockRejectedValueOnce({ _status: 503 });
+    const store = storeWith({}, dispatch);
+
+    await ensureReview(store, 'c-1', 'ns', 'a');
+    expect(reviewState('c-1', 'ns', 'a')).toBe('failed');
+    await expect(reviewNow(store, 'c-1', 'ns', 'b')).resolves.toBe(false);
+    expect(reviewState('c-1', 'ns', 'b')).toBe('failed');
+  });
+
+  it('resolves a later ask for a pending key only when that key is answered', async() => {
+    let answer: (value: unknown) => void = () => undefined;
+    const dispatch = jest.fn(() => new Promise((resolve) => {
+      answer = resolve;
+    }));
+    const store = storeWith({}, dispatch);
+
+    ensureReview(store, 'c-1', 'ns', 'a');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+
+    let done = false;
+    const later = ensureReview(store, 'c-1', 'ns', 'a').then(() => {
+      done = true;
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(done).toBe(false);
+    answer(allowed(true));
+    await later;
+    expect(done).toBe(true);
+    expect(reviewState('c-1', 'ns', 'a')).toBe('allowed');
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not write back an answer asked for before the cluster was cleared', async() => {
+    let answer: (value: unknown) => void = () => undefined;
+    const store = storeWith({}, jest.fn(() => new Promise((resolve) => {
+      answer = resolve;
+    })));
+
+    const first = ensureReview(store, 'c-1', 'ns', 'a');
+
+    await Promise.resolve();
+    await Promise.resolve();
+    clearReviews('c-1');
+    answer(allowed(false));
+    await first;
+
+    expect(reviewState('c-1', 'ns', 'a')).toBeUndefined();
+  });
+
+  it('reviews again after a clear, even while the cleared review is still out', async() => {
+    const answers: ((value: unknown) => void)[] = [];
+    const dispatch = jest.fn(() => new Promise((resolve) => {
+      answers.push(resolve);
+    }));
+    const store = storeWith({}, dispatch);
+
+    const first = ensureReview(store, 'c-1', 'ns', 'a');
+
+    await Promise.resolve();
+    await Promise.resolve();
+    clearReviews('c-1');
+
+    const second = ensureReview(store, 'c-1', 'ns', 'a');
+
+    expect(second).not.toBe(first);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    answers[1](allowed(true));
+    await second;
+    answers[0](allowed(false));
+    await first;
+
+    expect(reviewState('c-1', 'ns', 'a')).toBe('allowed');
   });
 
   it('reviews again now, past the cache, and records the answer', async() => {
@@ -190,8 +277,28 @@ describe('studio status service', () => {
   });
 
   it('is unknown when the user cannot read Studio\'s namespace', async() => {
-    const store = storeWith({ 'cluster/schemaFor': () => ({}) }, jest.fn().mockRejectedValue(new Error('403')));
+    const store = storeWith({ 'cluster/schemaFor': () => ({}) }, jest.fn().mockRejectedValue({ _status: 403 }));
 
     await expect(studioStatus(store, link)).resolves.toBe('unknown');
+  });
+
+  it('is not ready when Studio\'s Deployment is missing', async() => {
+    const store = storeWith({ 'cluster/schemaFor': () => ({}) }, jest.fn().mockRejectedValue({ _status: 404 }));
+
+    await expect(studioStatus(store, link)).resolves.toBe('not-ready');
+  });
+
+  it('reads the status of an error that carries no response body', async() => {
+    const store = storeWith({ 'cluster/schemaFor': () => ({}) }, jest.fn().mockRejectedValue({ response: { status: 404 } }));
+
+    await expect(studioStatus(store, link)).resolves.toBe('not-ready');
+  });
+
+  it('failed when the read fails for any other reason', async() => {
+    const dispatch = jest.fn().mockRejectedValueOnce({ _status: 500 }).mockRejectedValueOnce(new Error('network'));
+    const store = storeWith({ 'cluster/schemaFor': () => ({}) }, dispatch);
+
+    await expect(studioStatus(store, link)).resolves.toBe('failed');
+    await expect(studioStatus(store, link)).resolves.toBe('failed');
   });
 });

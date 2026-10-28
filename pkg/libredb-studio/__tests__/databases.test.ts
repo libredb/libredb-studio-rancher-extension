@@ -36,6 +36,7 @@ describe('studio status', () => {
     ['ready', 'success'],
     ['not-ready', 'warning'],
     ['unknown', 'info'],
+    ['failed', 'warning'],
   ])('shows %s as a %s banner', (status, color) => {
     const wrapper = render({ status: status as Status, link: status === 'not-set-up' ? undefined : LINK });
     const banner = wrapper.find('[data-testid="libredb-studio-status"]');
@@ -106,6 +107,15 @@ describe('database access cell', () => {
     expect(reason).toContain('%libredbStudio.databases.reason.denied%');
     expect(reason).toContain('"secret":"orders-app"');
     expect(reason).toContain('"namespace":"team-a"');
+  });
+
+  it('says the check failed, not that access is refused, when the review cannot be made', async() => {
+    const wrapper = render(jest.fn().mockRejectedValue(new Error('network')));
+
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="libredb-access-failed"]').text()).toContain('%libredbStudio.databases.reason.failed%');
+    expect(wrapper.find('[data-testid="libredb-open"]').exists()).toBe(false);
   });
 
   it('reviews again on Open and opens the Studio link without an opener', async() => {
@@ -253,6 +263,28 @@ describe('databases page', () => {
     await flushPromises();
 
     expect(wrapper.find('[data-testid="libredb-no-schema"]').text()).toBe('%libredbStudio.databases.noSchema%');
+  });
+
+  it('never reads or lists a Secret, through a full render and an Open', async() => {
+    const store = storeFor({
+      cnpgSchema: CNPG_SCHEMA, navlinks: [NAVLINK], deployment: { status: { readyReplicas: 1 } }
+    });
+
+    jest.spyOn(window, 'open').mockImplementation(() => null);
+    const wrapper = render(store);
+
+    await flushPromises();
+    await wrapper.find('[data-testid="libredb-open"]').trigger('click');
+    await flushPromises();
+
+    expect(store.dispatch).toHaveBeenCalledWith('cluster/request', expect.objectContaining({ method: 'post' }));
+    const touchesSecrets = store.dispatch.mock.calls.filter((call: unknown[]) => {
+      const payload = (call[1] || {}) as { type?: unknown, url?: unknown };
+
+      return /secret/i.test(String(payload.type || '')) || /\/secrets/i.test(String(payload.url || ''));
+    });
+
+    expect(touchesSecrets).toStrictEqual([]);
   });
 
   it('forgets the cluster\'s cached reviews when it opens', async() => {

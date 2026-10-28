@@ -34,8 +34,8 @@ describe('translations', () => {
       'libredbStudio.databases.open',
       'libredbStudio.databases.noSchema',
       'libredbStudio.databases.cannotList',
-      ...['not-set-up', 'pending', 'denied'].map((state) => `libredbStudio.databases.reason.${ state }`),
-      ...['not-set-up', 'ready', 'not-ready', 'unknown', 'open', 'severalLinks'].map((key) => `libredbStudio.status.${ key }`),
+      ...['not-set-up', 'pending', 'denied', 'failed'].map((state) => `libredbStudio.databases.reason.${ state }`),
+      ...['not-set-up', 'ready', 'not-ready', 'unknown', 'failed', 'open', 'severalLinks'].map((key) => `libredbStudio.status.${ key }`),
     ];
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);

@@ -19,7 +19,10 @@ export interface StudioLink {
   deploymentName: string;
 }
 
-/** The link's URL when it is https, the only scheme the extension opens */
+/**
+ * The link's URL when it is https, the only scheme the extension opens, and has no query or
+ * fragment, which the Studio link appends its own path and query to.
+ */
 export function usableToURL(navlink: NavLinkLike): string | undefined {
   const toURL = navlink.spec?.toURL;
 
@@ -28,7 +31,9 @@ export function usableToURL(navlink: NavLinkLike): string | undefined {
   }
 
   try {
-    return new URL(toURL).protocol === 'https:' ? toURL : undefined;
+    const url = new URL(toURL);
+
+    return url.protocol === 'https:' && !url.search && !url.hash ? toURL : undefined;
   } catch {
     return undefined;
   }

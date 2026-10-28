@@ -4,10 +4,10 @@ import type { StoreLike } from './types';
 /**
  * A reactive cache of SelfSubjectAccessReviews: may the signed-in user get a database's credential
  * Secret? The extension never reads the Secret; this only asks Kubernetes whether the user could.
- * Reads are synchronous, so an action's `enabled` can use them; a pending review counts as not
- * allowed wherever a decision is needed.
+ * Reads are synchronous, so an action's `enabled` can use them; a pending or failed review counts as
+ * not allowed wherever a decision is needed. Failed means the review could not be made at all.
  */
-export type ReviewState = 'pending' | 'allowed' | 'denied';
+export type ReviewState = 'pending' | 'allowed' | 'denied' | 'failed';
 
 interface QueuedReview {
   store: StoreLike;
@@ -16,9 +16,20 @@ interface QueuedReview {
   secret: string;
 }
 
+interface QueuedItem extends QueuedReview {
+  generation: number;
+  resolve: () => void;
+}
+
 const reviews = reactive<Record<string, ReviewState>>({});
-let queue: Map<string, QueuedReview> = new Map();
-let flushing: Promise<void> | undefined;
+/** The promise of each review still out, so a later ask for the same key waits for its answer */
+const inFlight = new Map<string, Promise<void>>();
+/** Per cluster, raised by a clear, so an answer asked for before the clear is not written back */
+const generations = new Map<string, number>();
+let queue: Map<string, QueuedItem> = new Map();
+let scheduled = false;
+
+const generationOf = (cluster: string) => generations.get(cluster) || 0;
 
 const keyOf = (cluster: string, namespace: string, secret: string) => `${ cluster }/${ namespace }/${ secret }`;
 
@@ -32,7 +43,7 @@ export function reviewUrl(cluster: string): string {
 
 async function review({
   store, cluster, namespace, secret
-}: QueuedReview): Promise<boolean> {
+}: QueuedReview): Promise<ReviewState> {
   try {
     const res = await store.dispatch('cluster/request', {
       url:                  reviewUrl(cluster),
@@ -49,21 +60,27 @@ async function review({
       }
     }) as { status?: { allowed?: boolean } } | undefined;
 
-    return res?.status?.allowed === true;
+    return res?.status?.allowed === true ? 'allowed' : 'denied';
   } catch {
-    return false;
+    return 'failed';
   }
 }
 
-async function flush(): Promise<void> {
+function flush(): void {
   const batch = queue;
 
   queue = new Map();
-  flushing = undefined;
+  scheduled = false;
 
-  await Promise.all([...batch.entries()].map(async([key, item]) => {
-    reviews[key] = (await review(item)) ? 'allowed' : 'denied';
-  }));
+  batch.forEach((item, key) => {
+    review(item).then((answer) => {
+      if (generationOf(item.cluster) === item.generation) {
+        reviews[key] = answer;
+        inFlight.delete(key);
+      }
+      item.resolve();
+    });
+  });
 }
 
 export function reviewState(cluster: string, namespace: string, secret: string): ReviewState | undefined {
@@ -72,38 +89,56 @@ export function reviewState(cluster: string, namespace: string, secret: string):
 
 /**
  * Asks for a review unless one is cached or under way; the reviews asked for in the same tick go
- * out together. Resolves when that pass is done.
+ * out together. Resolves when this key's review has answered.
  */
 export function ensureReview(store: StoreLike, cluster: string, namespace: string, secret: string): Promise<void> {
   const key = keyOf(cluster, namespace, secret);
+  const pending = inFlight.get(key);
 
-  if (!reviews[key]) {
-    reviews[key] = 'pending';
-    queue.set(key, {
-      store, cluster, namespace, secret
-    });
-    flushing = flushing || Promise.resolve().then(flush);
+  if (pending) {
+    return pending;
   }
 
-  return flushing || Promise.resolve();
+  if (reviews[key]) {
+    return Promise.resolve();
+  }
+
+  reviews[key] = 'pending';
+
+  const promise = new Promise<void>((resolve) => {
+    queue.set(key, {
+      store, cluster, namespace, secret, generation: generationOf(cluster), resolve
+    });
+  });
+
+  inFlight.set(key, promise);
+
+  if (!scheduled) {
+    scheduled = true;
+    Promise.resolve().then(flush);
+  }
+
+  return promise;
 }
 
 /** Reviews again past the cache, for the moment before a database is opened */
 export async function reviewNow(store: StoreLike, cluster: string, namespace: string, secret: string): Promise<boolean> {
-  const allowed = await review({
+  const answer = await review({
     store, cluster, namespace, secret
   });
 
-  reviews[keyOf(cluster, namespace, secret)] = allowed ? 'allowed' : 'denied';
+  reviews[keyOf(cluster, namespace, secret)] = answer;
 
-  return allowed;
+  return answer === 'allowed';
 }
 
-/** Forgets one cluster's answers, so the next read reviews again */
+/** Forgets one cluster's answers and the reviews still out for it, so the next read reviews again */
 export function clearReviews(cluster: string): void {
   const prefix = `${ cluster }/`;
 
+  generations.set(cluster, generationOf(cluster) + 1);
   Object.keys(reviews).filter((key) => key.startsWith(prefix)).forEach((key) => {
     delete reviews[key];
   });
+  [...inFlight.keys()].filter((key) => key.startsWith(prefix)).forEach((key) => inFlight.delete(key));
 }

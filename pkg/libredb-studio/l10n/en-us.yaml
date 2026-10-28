@@ -10,11 +10,13 @@ libredbStudio:
       not-set-up: LibreDB Studio is not set up
       pending: Checking access
       denied: You cannot read the Secret {secret} in {namespace}, which holds the credentials. A project owner can grant it.
+      failed: Access could not be checked. Reload the page to try again.
   status:
     not-set-up: LibreDB Studio is not set up in this cluster. A cluster owner can set it up.
     ready: LibreDB Studio is running in this cluster.
     not-ready: LibreDB Studio is set up in this cluster but is not ready. A cluster owner can check its workload in the {namespace} namespace.
     unknown: LibreDB Studio is set up in this cluster. Its state is not shown because you cannot read the {namespace} namespace.
+    failed: LibreDB Studio is set up in this cluster, but its state could not be read. Reload the page to try again.
     open: Open LibreDB Studio
     severalLinks: This cluster has {count} LibreDB Studio links; this page uses {name}.
 product:
