@@ -100,6 +100,22 @@ async function setting(store: StoreLike, id: string): Promise<string | undefined
   return (await findIfVisible<{ value?: string }>(store, 'management', SETTING, id))?.value || undefined;
 }
 
+/** What single sign-on takes from Rancher's settings: the issuer's base, the line's scopes and the CA */
+export interface RancherContext {
+  serverUrl?: string;
+  serverVersion?: string;
+  scopes: string[];
+  cacerts?: string;
+}
+
+export async function rancherContext(store: StoreLike): Promise<RancherContext> {
+  const [serverVersion, serverUrl, cacerts] = await Promise.all(['server-version', 'server-url', 'cacerts'].map((id) => setting(store, id)));
+
+  return {
+    serverUrl, serverVersion, scopes: oidcScopes(rancherLine(serverVersion)), cacerts
+  };
+}
+
 /** A feature flag's effective value, as Rancher reads it: a locked value, then the value, then the default */
 export function featureEnabled(feature: { spec?: { value?: boolean | null }, status?: { default?: boolean, lockedValue?: boolean | null } } | undefined): boolean {
   const locked = feature?.status?.lockedValue;
@@ -295,7 +311,9 @@ export async function runPreflight(store: StoreLike, cluster: string, repoName =
     };
   }
 
-  const [serverVersion, serverUrl, cacerts] = await Promise.all(['server-version', 'server-url', 'cacerts'].map((id) => setting(store, id)));
+  const {
+    serverVersion, serverUrl, cacerts, scopes
+  } = await rancherContext(store);
   const [ingressClasses, storageClasses, clusterIssuers, namespaces, repos] = await Promise.all([INGRESS_CLASS, STORAGE_CLASS, CLUSTER_ISSUER, 'namespace', CLUSTER_REPO]
     .map((type) => findAllIfVisible<Named>(store, type)));
   const ingress = defaultFirst(ingressClasses, (item) => annotated(item, ['ingressclass.kubernetes.io/is-default-class']));
@@ -323,7 +341,7 @@ export async function runPreflight(store: StoreLike, cluster: string, repoName =
     canUseSso:       sso.canUseSso,
     serverUrl,
     serverVersion,
-    scopes:          oidcScopes(rancherLine(serverVersion)),
+    scopes,
     cacerts,
     ingressClasses:  ingress,
     clusterIssuers:  names(clusterIssuers),

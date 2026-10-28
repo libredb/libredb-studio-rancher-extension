@@ -1,32 +1,25 @@
 import type { StudioLink } from '../navlink';
 import type { StoreLike } from '../types';
-import {
-  removeNamespace, removeOidcClient, removeOidcSecret, removeRancherCA, removeRecord, removeRelease, UndoEvent, UndoId
-} from './cleanup';
-import { Failure, failureOf, StepFailure } from './failure';
+import { undoCreated, UndoEvent, UndoId } from './cleanup';
+import { Failure, StepFailure } from './failure';
 import { kube, kubeGet } from './k8s';
-import {
-  MANAGED_LABELS, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RECORD_CONFIGMAP, RECORD_KEY, STUDIO_NAMESPACE
-} from './names';
+import { MANAGED_LABELS, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, STUDIO_NAMESPACE } from './names';
 import { copyClientSecret, createOidcClient, waitForClientId } from './oidc-client';
+import { createConfigMap, createRecord } from './record';
 import { installRelease, waitForRelease, waitForStudio } from './release';
-import { serializeRecord, SetupRecord, SsoRecord } from './values';
+import { runSteps, StepEvent as AnyStepEvent, StepState } from './steps';
+import type { SetupRecord, SsoRecord } from './values';
 import type { WaitOptions } from './wait';
 
 export type { UndoEvent } from './cleanup';
+export type { StepState } from './steps';
 
 /**
  * F6's apply, design section 6.4 steps 4 to 10: each step reported as it runs, and on a failure
  * everything this run created removed again, in reverse order.
  */
 export type StepId = 'namespace' | 'oidcClient' | 'oidcSecret' | 'rancherCA' | 'record' | 'install' | 'ready';
-export type StepState = 'running' | 'done' | 'skipped' | 'failed';
-
-export interface StepEvent {
-  step: StepId;
-  state: StepState;
-  failure?: Failure;
-}
+export type StepEvent = AnyStepEvent<StepId>;
 
 /** A step as a page shows it: pending until it starts; F7's upgrade and uninstall steps too */
 export interface StepView {
@@ -66,35 +59,6 @@ export function plannedSteps({ record }: SetupPlan): StepId[] {
     'install',
     'ready',
   ];
-}
-
-export function createConfigMap(store: StoreLike, cluster: string, name: string, data: Record<string, string>): Promise<unknown> {
-  return kube(store, cluster, 'post', `/api/v1/namespaces/${ STUDIO_NAMESPACE }/configmaps`, {
-    apiVersion: 'v1', kind: 'ConfigMap', metadata: { name, labels: { ...MANAGED_LABELS } }, data
-  });
-}
-
-/** Removes, newest first, what this run created */
-async function rollback(store: StoreLike, plan: SetupPlan, created: UndoId[], options: InstallOptions): Promise<UndoEvent[]> {
-  const { cluster, record } = plan;
-  const undone: UndoEvent[] = [];
-  const undo: Record<string, () => Promise<UndoEvent>> = {
-    release:    () => removeRelease(store, cluster, record.release.namespace, record.release.name, options),
-    record:     () => removeRecord(store, cluster),
-    rancherCA:  () => removeRancherCA(store, cluster),
-    oidcSecret: () => removeOidcSecret(store, cluster),
-    oidcClient: () => removeOidcClient(store, (record.sso as SsoRecord).client),
-    namespace:  () => removeNamespace(store, cluster, undone.some((item) => item.undo === 'release' && item.outcome === 'failed')),
-  };
-
-  for (const id of [...created].reverse()) {
-    const result = await undo[id]();
-
-    undone.push(result);
-    options.onUndo?.(result);
-  }
-
-  return undone;
 }
 
 /** Installs Studio in Rancher mode as the plan says, as the signed-in user */
@@ -150,7 +114,7 @@ export async function installStudio(store: StoreLike, plan: SetupPlan, options: 
       return 'done';
     },
     record: async() => {
-      await createConfigMap(store, cluster, RECORD_CONFIGMAP, { [RECORD_KEY]: serializeRecord({ ...record, createdNamespace: created.includes('namespace') }) });
+      await createRecord(store, cluster, { ...record, createdNamespace: created.includes('namespace') });
       created.push('record');
 
       return 'done';
@@ -170,22 +134,14 @@ export async function installStudio(store: StoreLike, plan: SetupPlan, options: 
     },
   };
 
-  for (const step of plannedSteps(plan)) {
-    options.onStep?.({ step, state: 'running' });
+  const failed = await runSteps(plannedSteps(plan), work, options.onStep, ['oidcSecret']);
 
-    try {
-      options.onStep?.({ step, state: await work[step]() });
-    } catch (err) {
-      const failure = failureOf(err, { secret: step === 'oidcSecret' });
+  if (failed) {
+    const undone = await undoCreated(store, cluster, record, created, options);
 
-      options.onStep?.({
-        step, state: 'failed', failure
-      });
-
-      return {
-        ok: false, failedStep: step, failure, undone: await rollback(store, plan, created, options)
-      };
-    }
+    return {
+      ok: false, failedStep: failed.step, failure: failed.failure, undone
+    };
   }
 
   return {

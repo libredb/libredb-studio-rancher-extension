@@ -18,8 +18,16 @@ export interface Operation {
 }
 
 interface App {
-  spec?: { version?: number, info?: { status?: string } };
+  spec?: { version?: number, info?: { status?: string }, chart?: { metadata?: { version?: string, appVersion?: string } } };
   status?: { summary?: { state?: string } };
+}
+
+/** A release as Helm and Rancher's app see it */
+export interface ReleaseState {
+  status?: string;
+  revision: number;
+  chartVersion?: string;
+  appVersion?: string;
 }
 
 const HELM_TIMEOUT = '600s';
@@ -100,11 +108,16 @@ async function operationFailed(store: StoreLike, cluster: string, operation: Ope
   return pod?.status?.phase === 'Failed';
 }
 
-/** The release's Helm state and revision, or nothing when there is no release */
-export async function releaseState(store: StoreLike, cluster: string, namespace: string, name: string): Promise<{ status?: string, revision: number } | undefined> {
+/** The release's Helm state, revision and chart, or nothing when there is no release */
+export async function releaseState(store: StoreLike, cluster: string, namespace: string, name: string): Promise<ReleaseState | undefined> {
   const app = await kubeGet<App>(store, cluster, appPath(namespace, name));
 
-  return app ? { status: app.spec?.info?.status || app.status?.summary?.state, revision: app.spec?.version || 0 } : undefined;
+  return app ? {
+    status:       app.spec?.info?.status || app.status?.summary?.state,
+    revision:     app.spec?.version || 0,
+    chartVersion: app.spec?.chart?.metadata?.version,
+    appVersion:   app.spec?.chart?.metadata?.appVersion,
+  } : undefined;
 }
 
 /**
