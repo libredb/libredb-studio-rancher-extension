@@ -1,4 +1,7 @@
 import { createHash } from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import yaml from 'js-yaml';
 import golden from '../../../tests/unit/fixtures/kubernetes-discovery-golden.json';
 import { CNPG_CLUSTER_KIND, SUPPORTED_KINDS, kindFor } from '../contract/kinds';
 import { connectionId, studioLink, STUDIO_ID_RULE } from '../contract/connection-id';
@@ -67,5 +70,16 @@ describe('golden fixture', () => {
 
   it('is still the provisional copy, until the copy of Studio\'s fixture from a released tag replaces it', () => {
     expect(golden.provenance).toBe('provisional');
+  });
+
+  it('keeps a provisional copy out of a chart release', () => {
+    const workflow = yaml.load(fs.readFileSync(path.resolve(__dirname, '../../../.github/workflows/build-extension-charts.yml'), 'utf8')) as {
+      jobs: Record<string, { needs?: string | string[], if?: string, steps?: { run?: string }[] }>
+    };
+    const guard = workflow.jobs['golden-fixture-released'];
+
+    expect(guard.if).toBe(workflow.jobs['build-extension-charts'].if);
+    expect(guard.steps?.map((step) => step.run).join('\n')).toContain('tests/unit/fixtures/kubernetes-discovery-golden.json');
+    expect([workflow.jobs['build-extension-charts'].needs].flat()).toContain('golden-fixture-released');
   });
 });
