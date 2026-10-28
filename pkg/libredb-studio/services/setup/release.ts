@@ -1,3 +1,4 @@
+import { CNPG_CLUSTER_TYPE } from '../../config';
 import { StudioLink, usableToURL } from '../navlink';
 import type { StoreLike } from '../types';
 import { StepFailure } from './failure';
@@ -213,24 +214,45 @@ export async function waitForStudio(store: StoreLike, cluster: string, options: 
   };
 }
 
-const WORKLOAD_LISTS = [
-  '/apis/catalog.cattle.io/v1/namespaces/{ns}/apps',
-  '/apis/apps/v1/namespaces/{ns}/deployments',
-  '/apis/apps/v1/namespaces/{ns}/statefulsets',
-  '/apis/apps/v1/namespaces/{ns}/daemonsets',
-  '/apis/batch/v1/namespaces/{ns}/jobs',
-  '/apis/batch/v1/namespaces/{ns}/cronjobs',
+/** A list of what may live in a namespace beside Studio; `controlled`: what goes with its controller */
+interface NamespaceList {
+  path: string;
+  controlled?: true;
+}
+
+const NAMESPACE_LISTS: NamespaceList[] = [
+  { path: '/apis/catalog.cattle.io/v1/namespaces/{ns}/apps' },
+  { path: '/apis/apps/v1/namespaces/{ns}/deployments' },
+  { path: '/apis/apps/v1/namespaces/{ns}/replicasets', controlled: true },
+  { path: '/apis/apps/v1/namespaces/{ns}/statefulsets' },
+  { path: '/apis/apps/v1/namespaces/{ns}/daemonsets' },
+  { path: '/apis/batch/v1/namespaces/{ns}/jobs' },
+  { path: '/apis/batch/v1/namespaces/{ns}/cronjobs' },
+  { path: '/api/v1/namespaces/{ns}/pods', controlled: true },
+  { path: '/api/v1/namespaces/{ns}/persistentvolumeclaims' },
+  { path: '/api/v1/namespaces/{ns}/services' },
 ];
+const CNPG_CLUSTERS: NamespaceList = { path: '/apis/postgresql.cnpg.io/v1/namespaces/{ns}/clusters' };
+
+interface Listed {
+  metadata?: { deletionTimestamp?: string, ownerReferences?: { controller?: boolean }[] };
+}
 
 /**
- * Whether nothing else lives in a namespace: no app and no workload that is not already being
- * deleted. A list that fails counts as not empty, so a namespace is never removed on a guess.
+ * Whether nothing else lives in a namespace: no app, workload, pod, volume claim, service or
+ * CloudNativePG database that is not already being deleted. A pod or replica set with a controller
+ * goes with that controller, which the garbage collector may not have reached yet when an uninstall
+ * ends, so it does not count by itself. A list that fails counts as not empty, so a namespace is
+ * never removed on a guess.
  */
 export async function namespaceIsEmpty(store: StoreLike, cluster: string, namespace: string): Promise<boolean> {
-  try {
-    const lists = await Promise.all(WORKLOAD_LISTS.map((path) => kube<{ items?: { metadata?: { deletionTimestamp?: string } }[] }>(store, cluster, 'get', path.replace('{ns}', namespace))));
+  const lists: NamespaceList[] = store.getters['cluster/schemaFor'](CNPG_CLUSTER_TYPE) ? [...NAMESPACE_LISTS, CNPG_CLUSTERS] : NAMESPACE_LISTS;
+  const lives = (item: Listed, controlled?: true) => !item.metadata?.deletionTimestamp && !(controlled && item.metadata?.ownerReferences?.some((owner) => owner.controller));
 
-    return lists.every((list) => !(list?.items || []).some((item) => !item.metadata?.deletionTimestamp));
+  try {
+    const found = await Promise.all(lists.map(({ path }) => kube<{ items?: Listed[] }>(store, cluster, 'get', path.replace('{ns}', namespace))));
+
+    return found.every((list, index) => !(list?.items || []).some((item) => lives(item, lists[index].controlled)));
   } catch {
     return false;
   }

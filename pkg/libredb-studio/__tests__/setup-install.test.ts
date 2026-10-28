@@ -101,7 +101,7 @@ function cluster(override: Answers = [], appStatus = 'deployed', annotations: Re
       [`GET ${ NAVLINK }`, () => (installed() ? { metadata: { name: 'libredb-studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } } : httpError(404))],
       [`GET ${ DEPLOYMENT }`, () => (installed() ? { status: { readyReplicas: 1 } } : httpError(404))],
       [`POST ${ UNINSTALL }`, { operationName: 'helm-operation-2', operationNamespace: 'cattle-system' }],
-      [/^GET .*\/namespaces\/libredb-studio\/(apps|deployments|statefulsets|daemonsets|jobs|cronjobs)$/, { items: [] }],
+      [/^GET .*\/namespaces\/libredb-studio\/(apps|deployments|replicasets|statefulsets|daemonsets|jobs|cronjobs|pods|persistentvolumeclaims|services|clusters)$/, { items: [] }],
       [KUBE_REQUESTS, (request: Request) => holder.kube.handle(request)],
     ],
   };
@@ -465,6 +465,44 @@ describe('installing Studio', () => {
         undo: 'namespace', outcome: 'kept', failure: { reason: 'notEmpty', args: { namespace: 'libredb-studio' } }
       });
       expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
+    });
+
+    it.each([
+      ['a pod of its own', 'api/v1', 'pods'],
+      ['a volume claim', 'api/v1', 'persistentvolumeclaims'],
+      ['a service', 'api/v1', 'services'],
+      ['a replica set of its own', 'apis/apps/v1', 'replicasets'],
+    ])('keeps a namespace it created while %s lives there', async(_, group, kind) => {
+      const target = cluster([
+        [`POST ${ INSTALL }`, httpError(500)],
+        [`GET ${ K8S }/${ group }/namespaces/libredb-studio/${ kind }`, { items: [{ metadata: { name: 'someone-elses' } }] }],
+      ]);
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'notEmpty', args: { namespace: 'libredb-studio' } }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
+    });
+
+    it('goes past the pods and replica sets a removed workload leaves to the garbage collector', async() => {
+      const owned = (kind: string) => ({ items: [{ metadata: { name: 'studio-1', ownerReferences: [{ kind, name: 'studio', controller: true }] } }] });
+      const target = cluster([
+        [`POST ${ INSTALL }`, httpError(500)],
+        [`GET ${ NS }/pods`, owned('ReplicaSet')],
+        [`GET ${ K8S }/apis/apps/v1/namespaces/libredb-studio/replicasets`, owned('Deployment')],
+      ]);
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
+    });
+
+    it('lists CloudNativePG Clusters only where the cluster has the type', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+      const { run } = await install(localPlan(), target);
+
+      expect(lines(target.store).filter((line) => line.endsWith('/clusters'))).toStrictEqual([]);
+      expect(run.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
     });
 
     it('ignores what is already being deleted when it decides the namespace is empty', async() => {

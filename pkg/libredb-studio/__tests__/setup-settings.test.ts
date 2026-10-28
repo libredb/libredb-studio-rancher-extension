@@ -152,7 +152,7 @@ function installed({
       [`POST ${ UPGRADE }`, { operationName: 'helm-operation-9', operationNamespace: 'cattle-system' }],
       [`POST ${ UNINSTALL }`, { operationName: 'helm-operation-10', operationNamespace: 'cattle-system' }],
       [`GET ${ NAVLINK }`, () => (count(`POST ${ UNINSTALL }`) ? httpError(404) : { metadata: { name: 'libredb-studio.libredb-studio', labels: { 'app.kubernetes.io/name': 'libredb-studio' } } })],
-      [/^GET .*\/namespaces\/libredb-studio\/(apps|deployments|statefulsets|daemonsets|jobs|cronjobs)$/, { items: [] }],
+      [/^GET .*\/namespaces\/libredb-studio\/(apps|deployments|replicasets|statefulsets|daemonsets|jobs|cronjobs|pods|persistentvolumeclaims|services|clusters)$/, { items: [] }],
       [KUBE_REQUESTS, (request: Request) => holder.kube.handle(request)],
     ],
   });
@@ -844,6 +844,16 @@ describe('uninstalling Studio', () => {
       },
     ]);
     expect(lines(store)).not.toContain(`DELETE ${ RECORD_PATH }`);
+  });
+
+  it('keeps the namespace while a CloudNativePG database lives there', async() => {
+    const { store } = installed({ override: [[`GET ${ K8S }/apis/postgresql.cnpg.io/v1/namespaces/libredb-studio/clusters`, { items: [{ metadata: { name: 'db' } }] }]] });
+    const result = await uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options());
+
+    expect(result.undone).toContainEqual({
+      undo: 'namespace', outcome: 'kept', failure: { reason: 'notEmpty', args: { namespace: 'libredb-studio' } }
+    });
+    expect(lines(store)).not.toContain(`DELETE ${ NS }`);
   });
 
   it('finishes the job when an earlier uninstall left only the record', async() => {
