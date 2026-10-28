@@ -1,6 +1,6 @@
 import { IPlugin } from '@shell/core/types';
 import { getProductFromRoute } from '@shell/utils/router';
-import { init } from '../product';
+import { init, GATE_STORE, PRODUCT_ACTIVE } from '../product';
 import {
   PRODUCT_NAME, DATABASES_PAGE, DATABASES_ROUTE, CNPG_CLUSTER_TYPE, SETTINGS_PAGE, SETTINGS_ROUTE
 } from '../config';
@@ -12,7 +12,7 @@ describe('product', () => {
     basicType:   jest.fn(),
   });
 
-  it('registers a cluster product shown only where the CloudNativePG Cluster schema is visible', () => {
+  it('registers a cluster product gated on the extension\'s own getter, not on a schema alone', () => {
     const calls = dsl();
     const plugin = { DSL: jest.fn(() => calls) } as unknown as IPlugin;
     const store = {};
@@ -22,11 +22,12 @@ describe('product', () => {
     expect(plugin.DSL).toHaveBeenCalledWith(store, PRODUCT_NAME);
     expect(calls.product).toHaveBeenCalledWith({
       inStore:             'cluster',
-      ifHaveType:          CNPG_CLUSTER_TYPE,
+      ifGetter:            PRODUCT_ACTIVE,
       icon:                'datastore',
       showNamespaceFilter: true,
       to:                  { name: DATABASES_ROUTE, params: { product: PRODUCT_NAME } },
     });
+    expect(PRODUCT_ACTIVE).toBe(`${ GATE_STORE }/productActive`);
     expect(CNPG_CLUSTER_TYPE).toBe('postgresql.cnpg.io.cluster');
   });
 

@@ -48,6 +48,24 @@ describe('extension entry point', () => {
     expect(plugin.addRoutes).toHaveBeenCalledWith(routes);
   });
 
+  it('should add the store module the product is gated on, and remove it again', () => {
+    const plugin = mockPlugin();
+    const store = { registerModule: jest.fn(), unregisterModule: jest.fn() };
+
+    extension(plugin);
+
+    expect(plugin.addStore).toHaveBeenCalledTimes(1);
+
+    const [name, register, unregister] = (plugin.addStore as jest.Mock).mock.calls[0];
+
+    register()(store);
+    unregister(store);
+
+    expect(name).toBe(product.GATE_STORE);
+    expect(store.registerModule).toHaveBeenCalledWith(product.GATE_STORE, product.gateStore);
+    expect(store.unregisterModule).toHaveBeenCalledWith(product.GATE_STORE);
+  });
+
   it('should add the open action to the row menu of supported databases only', () => {
     const plugin = mockPlugin();
 

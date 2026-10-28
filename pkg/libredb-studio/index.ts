@@ -3,6 +3,13 @@ import { ActionLocation, IPlugin, PanelLocation } from '@shell/core/types';
 import routes from './routing';
 import openInStudioAction from './actions/open-in-studio';
 import { CNPG_CLUSTER_TYPE } from './config';
+import { GATE_STORE, gateStore } from './product';
+
+/** The part of the dashboard's Vuex store that an extension's store module is added to */
+interface ModuleHost {
+  registerModule(name: string, module: typeof gateStore): void;
+  unregisterModule(name: string): void;
+}
 
 // Init the package
 export default function(plugin: IPlugin): void {
@@ -12,7 +19,9 @@ export default function(plugin: IPlugin): void {
   // Provide plugin metadata from package.json
   plugin.metadata = require('./package.json');
 
-  // The "LibreDB Studio" product in the cluster's navigation; the shell calls the module's init
+  // The "LibreDB Studio" product in the cluster's navigation; the shell calls the module's init. It
+  // is gated on a getter of the extension's own store module.
+  plugin.addStore(GATE_STORE, () => (store: ModuleHost) => store.registerModule(GATE_STORE, gateStore), (store: ModuleHost) => store.unregisterModule(GATE_STORE));
   plugin.addProduct(require('./product'));
   plugin.addRoutes(routes);
 
