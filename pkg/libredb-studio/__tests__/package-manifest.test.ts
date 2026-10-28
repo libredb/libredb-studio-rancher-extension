@@ -29,9 +29,12 @@ describe('extension package manifest', () => {
     expect(annotations['catalog.cattle.io/kube-version']).toBe('>= 1.26.0-0');
   });
 
-  it('names the product and targets Rancher Manager', () => {
+  it('names the product as the catalog shows it', () => {
     expect(annotations['catalog.cattle.io/display-name']).toBe('LibreDB Studio');
-    expect(annotations['catalog.cattle.io/ui-extensions-host']).toBe('rancher-manager');
+  });
+
+  it('names no host application, which the Extensions page checks as a version range and so refuses for any value', () => {
+    expect(Object.keys(annotations)).not.toContain('catalog.cattle.io/ui-extensions-host');
   });
 
   it('is never marked Prime-only', () => {
