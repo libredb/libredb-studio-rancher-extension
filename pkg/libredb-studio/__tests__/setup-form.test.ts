@@ -38,6 +38,7 @@ const FORM: SetupForm = {
   clusterIssuer:    'letsencrypt',
   namespaces:       ['team-b', 'team-a', 'team-b'],
   sso:              true,
+  ownersTrusted:    true,
 };
 
 describe('setup form', () => {
@@ -50,6 +51,7 @@ describe('setup form', () => {
       clusterIssuer:    'letsencrypt',
       namespaces:       [],
       sso:              true,
+      ownersTrusted:    false,
     });
     expect(initialForm({
       ...PREFLIGHT, canUseSso: false, ingressClasses: [], clusterIssuers: []
@@ -120,15 +122,23 @@ describe('setup form', () => {
     expect(validateForm({ ...FORM, sso: false }, { ...PREFLIGHT, canUseSso: false })).toStrictEqual({});
   });
 
+  it('needs the administrator\'s acknowledgement of what this cluster\'s owners can do once single sign-on is on', () => {
+    expect(validateForm({ ...FORM, ownersTrusted: false }, PREFLIGHT)).toStrictEqual({ ownersTrusted: 'ssoTrust' });
+    expect(validateForm({
+      ...FORM, sso: false, ownersTrusted: false
+    }, PREFLIGHT)).toStrictEqual({});
+  });
+
   it('installs from the extension\'s own repository, whatever the preflight read', () => {
     expect(planFrom('c-m-1', { ...PREFLIGHT, repo: 'mirror' }, FORM).record.release.repo).toBe('rancher-partner-charts');
   });
 
   it('plans Rancher mode with single sign-on from the form and the preflight', () => {
     expect(planFrom('c-m-1', PREFLIGHT, FORM)).toStrictEqual({
-      cluster: 'c-m-1',
-      cacerts: RANCHER_CA,
-      record:  {
+      cluster:       'c-m-1',
+      cacerts:       RANCHER_CA,
+      ownersTrusted: true,
+      record:        {
         version: 1,
         cluster: 'c-m-1',
         release: {

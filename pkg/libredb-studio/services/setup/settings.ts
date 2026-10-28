@@ -17,9 +17,7 @@ import {
 import { createConfigMap, readRecord, replaceRecord } from './record';
 import { releaseState, upgradeRelease, waitForRelease } from './release';
 import { runSteps, StepEvent } from './steps';
-import {
-  oidcIssuer, sameRecord, SetupRecord, SsoRecord
-} from './values';
+import { oidcIssuer, sameRecord, SetupRecord, SsoRecord } from './values';
 import { OIDC_SCOPE_LISTS } from './versions';
 import type { WaitOptions } from './wait';
 
@@ -312,10 +310,14 @@ async function compensate(store: StoreLike, cluster: string, record: SetupRecord
  * Turns single sign-on on for a Studio installed with its own sign-in (design section 6.7): steps 5
  * to 8 of the setup as an upgrade, which needs a Rancher administrator.
  */
-/** What the administrator saw and confirmed before single sign-on: the redirect's host and the namespaces */
+/**
+ * What the administrator saw and confirmed before single sign-on: the redirect's host, the
+ * namespaces, and that owners of this cluster can then act in Rancher as anyone who signs in to Studio
+ */
 export interface SsoConfirmation {
   host: string;
   namespaces: string[];
+  ownersTrusted: boolean;
 }
 
 export async function enableSso(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, context: RancherContext, confirmed: SsoConfirmation, options: ChangeOptions = {}): Promise<ChangeResult> {
@@ -327,6 +329,11 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 
   if (!context.serverUrl) {
     return refused('ssoUnavailable');
+  }
+
+  // Nothing is created, the OIDC client least of all, without the administrator's acknowledgement
+  if (confirmed.ownersTrusted !== true) {
+    return refused('notAcknowledged');
   }
 
   const live = await unchangedRecord(store, cluster, record);
@@ -485,7 +492,9 @@ export async function uninstallStudio(store: StoreLike, cluster: string, record:
     noteFound(await removeOidcClient(store, client), !!sso);
   } else {
     // Left to an administrator: kept when the record says single sign-on is on, otherwise possibly there
-    note(sso ? { undo: 'oidcClient', outcome: 'kept', failure: { reason: 'notAllowed', args: { name: client } } } : {
+    note(sso ? {
+      undo: 'oidcClient', outcome: 'kept', failure: { reason: 'notAllowed', args: { name: client } }
+    } : {
       undo: 'oidcClient', outcome: 'unchecked', failure: { reason: 'mayBeLeft', args: { name: client } }
     });
   }

@@ -35,6 +35,8 @@ export interface SetupPlan {
   record: SetupRecord;
   /** Rancher's CA, which the record's single sign-on copies when it has one */
   cacerts?: string;
+  /** The administrator's acknowledgement of what this cluster's owners can do with single sign-on */
+  ownersTrusted?: boolean;
 }
 
 export interface InstallOptions extends WaitOptions {
@@ -61,9 +63,20 @@ export function plannedSteps({ record }: SetupPlan): StepId[] {
   ];
 }
 
-/** Installs Studio in Rancher mode as the plan says, as the signed-in user */
+/**
+ * Installs Studio in Rancher mode as the plan says, as the signed-in user. Single sign-on needs the
+ * administrator's acknowledgement that owners of this cluster can then act in Rancher as anyone who
+ * signs in to Studio; without it nothing is created, the OIDC client least of all.
+ */
 export async function installStudio(store: StoreLike, plan: SetupPlan, options: InstallOptions = {}): Promise<InstallResult> {
   const { cluster, record } = plan;
+
+  if (record.sso && plan.ownersTrusted !== true) {
+    return {
+      ok: false, failure: { reason: 'notAcknowledged' }, undone: []
+    };
+  }
+
   const created: UndoId[] = [];
   let clientId = '';
   let link: StudioLink | undefined;

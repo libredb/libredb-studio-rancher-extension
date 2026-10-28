@@ -15,10 +15,15 @@ export interface SetupForm {
   clusterIssuer: string;
   namespaces: string[];
   sso: boolean;
+  /**
+   * The administrator's acknowledgement that, with single sign-on, owners of this cluster can act in
+   * Rancher as anyone who signs in to Studio, which single sign-on needs
+   */
+  ownersTrusted: boolean;
 }
 
 /** Per field, the l10n key under libredbStudio.setup.form.errors of what is wrong */
-export type FormErrors = Partial<Record<'host' | 'ingressClassName' | 'tls' | 'namespaces' | 'sso', string>>;
+export type FormErrors = Partial<Record<'host' | 'ingressClassName' | 'tls' | 'namespaces' | 'sso' | 'ownersTrusted', string>>;
 
 /** The exporter takes at most this many namespaces */
 const MAX_NAMESPACES = 256;
@@ -58,13 +63,15 @@ export function initialForm(preflight: PreflightResult): SetupForm {
     clusterIssuer:    preflight.clusterIssuers[0] || '',
     namespaces:       [],
     sso:              preflight.canUseSso,
+    ownersTrusted:    false,
   };
 }
 
 /**
  * What stops the form: a host name the chart's NavLink and the OIDC callback can use, a concrete
  * DNS name without scheme, port, path or wildcard; choices the cluster offers; at least one
- * namespace to discover; single sign-on only where the preflight allowed it.
+ * namespace to discover; single sign-on only where the preflight allowed it, and only with the
+ * administrator's acknowledgement of what this cluster's owners can then do.
  */
 export function validateForm(form: SetupForm, preflight: PreflightResult): FormErrors {
   const errors: FormErrors = {};
@@ -91,6 +98,8 @@ export function validateForm(form: SetupForm, preflight: PreflightResult): FormE
 
   if (form.sso && !preflight.canUseSso) {
     errors.sso = 'sso';
+  } else if (form.sso && !form.ownersTrusted) {
+    errors.ownersTrusted = 'ssoTrust';
   }
 
   return errors;
@@ -124,6 +133,6 @@ export function planFrom(cluster: string, preflight: PreflightResult, form: Setu
   };
 
   return {
-    cluster, record, cacerts: preflight.cacerts
+    cluster, record, cacerts: preflight.cacerts, ownersTrusted: form.ownersTrusted
   };
 }

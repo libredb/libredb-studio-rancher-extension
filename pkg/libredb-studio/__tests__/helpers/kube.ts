@@ -65,7 +65,9 @@ export class FakeKube {
     }
 
     if (request.headers?.accept === METADATA_ONLY) {
-      return { apiVersion: 'meta.k8s.io/v1', kind: 'PartialObjectMetadata', metadata: found.metadata };
+      return {
+        apiVersion: 'meta.k8s.io/v1', kind: 'PartialObjectMetadata', metadata: found.metadata
+      };
     }
 
     return found;

@@ -66,8 +66,8 @@ describe('translations', () => {
       'libredbStudio.settings.unmarked',
       ...under('', ['title', 'intro', 'blocked', 'checkAgain', 'failed', 'doneSso', 'doneLocal', 'undoneTitle']),
       ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
-      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'redirect', 'localSignIn', 'install']),
-      ...under('form.errors.', ['host', 'ingressClass', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'tooManyNamespaces', 'sso']),
+      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'ssoTrust', 'redirect', 'localSignIn', 'install']),
+      ...under('form.errors.', ['host', 'ingressClass', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'tooManyNamespaces', 'sso', 'ssoTrust']),
       ...under('steps.', ['namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready', 'upgrade', 'saveRecord']),
       ...under('state.', ['pending', 'running', 'done', 'skipped', 'failed']),
       ...under('undo.', ['release', 'upgrade', 'navLink', 'record', 'rancherCA', 'oidcSecret', 'oidcClient', 'namespace']),
@@ -75,7 +75,7 @@ describe('translations', () => {
       ...under('failure.', [
         'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
         'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
-        'changedSinceLoad', 'mayBeLeft',
+        'changedSinceLoad', 'mayBeLeft', 'notAcknowledged',
       ]),
       ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
         'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle',
@@ -83,5 +83,16 @@ describe('translations', () => {
     ];
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);
+  });
+
+  it('say word for word what single sign-on lets this cluster\'s owners do, and call it experimental', () => {
+    const enUs = yaml.load(fs.readFileSync(enUsPath, 'utf8')) as Record<string, unknown>;
+    const lookup = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enUs);
+
+    expect(lookup('libredbStudio.setup.form.ssoTrust')).toBe(
+      'Owners of this cluster will be able to act in Rancher as any user who signs in to LibreDB Studio. Enable single sign-on only on clusters whose owners you trust with that.'
+    );
+    expect(lookup('libredbStudio.setup.form.sso')).toBe('Sign in with Rancher (single sign-on, experimental)');
+    expect(lookup('libredbStudio.settings.ssoTitle')).toBe('Single sign-on (experimental)');
   });
 });

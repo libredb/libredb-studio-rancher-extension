@@ -234,7 +234,7 @@ export default defineComponent({
         <Checkbox
           v-model:value="form.sso"
           class="mb-10"
-          :label="t('libredbStudio.setup.form.sso')"
+          :label="t('libredbStudio.setup.form.sso', {}, true)"
           :disabled="!preflight.canUseSso"
           data-testid="libredb-setup-sso"
         />
@@ -244,6 +244,13 @@ export default defineComponent({
         >
           {{ t('libredbStudio.setup.form.redirect', { uri: redirectUri }, true) }}
         </p>
+        <Checkbox
+          v-if="form.sso"
+          v-model:value="form.ownersTrusted"
+          class="mb-10"
+          :label="t('libredbStudio.setup.form.ssoTrust', {}, true)"
+          data-testid="libredb-setup-sso-trust"
+        />
         <Banner
           v-if="!form.sso"
           color="info"

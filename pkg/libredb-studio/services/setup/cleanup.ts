@@ -1,8 +1,6 @@
 import type { StoreLike } from '../types';
 import { Failure, failureOf } from './failure';
-import {
-  kubeDelete, kubeGet, kubeMetadata, LOCAL_CLUSTER
-} from './k8s';
+import { kubeDelete, kubeGet, kubeMetadata, LOCAL_CLUSTER } from './k8s';
 import {
   OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, STUDIO_NAMESPACE, isManaged
 } from './names';

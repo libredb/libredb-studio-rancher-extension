@@ -110,13 +110,18 @@ export function serializeRecord(record: SetupRecord): string {
   return JSON.stringify(record);
 }
 
-/** JSON with every object's keys in order, so the same content always reads the same */
-const canonical = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => (item && typeof item === 'object' && !Array.isArray(item) ?
-  Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item));
+/** A JSON replacer that puts every object's keys in order, so the same content serializes the same */
+function keysInOrder(_key: string, item: unknown): unknown {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    return item;
+  }
+
+  return Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)));
+}
 
 /** Whether two records say the same, whatever the order of their keys */
 export function sameRecord(a: SetupRecord, b: SetupRecord): boolean {
-  return canonical(a) === canonical(b);
+  return JSON.stringify(a, keysInOrder) === JSON.stringify(b, keysInOrder);
 }
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0;

@@ -46,7 +46,7 @@ const LOCAL_RECORD: SetupRecord = { ...RECORD };
 delete LOCAL_RECORD.sso;
 
 const ssoPlan = (record: SetupRecord = RECORD): SetupPlan => ({
-  cluster: CLUSTER, record, cacerts: RANCHER_CA
+  cluster: CLUSTER, record, cacerts: RANCHER_CA, ownersTrusted: true
 });
 const localPlan = (): SetupPlan => ({ cluster: CLUSTER, record: LOCAL_RECORD });
 
@@ -256,6 +256,21 @@ describe('installing Studio', () => {
 
       expect(lines(target.store).filter((line) => line === `GET ${ CLIENT }`)).toHaveLength(2);
     });
+  });
+
+  it('creates nothing, the OIDC client least of all, for single sign-on the administrator did not acknowledge', async() => {
+    for (const plan of [{ ...ssoPlan(), ownersTrusted: false }, {
+      cluster: CLUSTER, record: RECORD, cacerts: RANCHER_CA
+    }]) {
+      const target = cluster();
+      const { result, run } = await install(plan, target);
+
+      expect(result).toStrictEqual({
+        ok: false, failure: { reason: 'notAcknowledged' }, undone: []
+      });
+      expect(run.events).toStrictEqual([]);
+      expect(target.store.calls).toStrictEqual([]);
+    }
   });
 
   describe('without single sign-on', () => {
@@ -486,7 +501,16 @@ describe('installing Studio', () => {
     });
 
     it('goes past the pods and replica sets a removed workload leaves to the garbage collector', async() => {
-      const owned = (kind: string) => ({ items: [{ metadata: { name: 'studio-1', ownerReferences: [{ kind, name: 'studio', controller: true }] } }] });
+      const owned = (kind: string) => ({
+        items: [{
+          metadata: {
+            name:            'studio-1',
+            ownerReferences: [{
+              kind, name: 'studio', controller: true
+            }]
+          }
+        }]
+      });
       const target = cluster([
         [`POST ${ INSTALL }`, httpError(500)],
         [`GET ${ NS }/pods`, owned('ReplicaSet')],
@@ -638,7 +662,9 @@ describe('installing Studio', () => {
 
     it('refuses a plan that copies Rancher\'s CA without one', async() => {
       const target = cluster();
-      const { result } = await install({ cluster: CLUSTER, record: RECORD }, target);
+      const { result } = await install({
+        cluster: CLUSTER, record: RECORD, ownersTrusted: true
+      }, target);
 
       expect(result).toMatchObject({
         ok: false, failedStep: 'rancherCA', failure: { reason: 'noRancherCA' }

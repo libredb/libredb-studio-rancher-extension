@@ -99,7 +99,9 @@ const fill = async(wrapper: VueWrapper, values: Record<string, unknown>) => {
   await flushPromises();
 };
 
-const VALID = { 'libredb-setup-host': 'studio.example.com', 'libredb-setup-namespaces': ['team-a'] };
+const VALID = {
+  'libredb-setup-host': 'studio.example.com', 'libredb-setup-namespaces': ['team-a'], 'libredb-setup-sso-trust': true
+};
 
 describe('setup page', () => {
   beforeEach(() => {
@@ -197,8 +199,59 @@ describe('setup page', () => {
     expect(field(wrapper, 'libredb-setup-namespaces').props()).toMatchObject({
       value: [], options: ['team-a', 'team-b'], multiple: true
     });
-    expect(field(wrapper, 'libredb-setup-sso').props()).toMatchObject({ value: true, disabled: false });
+    expect(field(wrapper, 'libredb-setup-sso').props()).toMatchObject({
+      value: true, disabled: false, label: '%libredbStudio.setup.form.sso%'
+    });
+    expect(field(wrapper, 'libredb-setup-sso-trust').props()).toMatchObject({ value: false, label: '%libredbStudio.setup.form.ssoTrust%' });
     expect(wrapper.find('[data-testid="libredb-setup-local-sign-in"]').exists()).toBe(false);
+  });
+
+  it('installs with single sign-on only once the administrator acknowledged what this cluster\'s owners can then do', async() => {
+    const wrapper = render();
+
+    await flushPromises();
+    await fill(wrapper, { ...VALID, 'libredb-setup-sso-trust': false });
+    await wrapper.find('form').trigger('submit');
+
+    expect(installMock).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="libredb-setup-errors"]').text()).toBe('%libredbStudio.setup.form.errors.ssoTrust%');
+
+    installMock.mockResolvedValue({ ok: true, undone: [] });
+    await fill(wrapper, { 'libredb-setup-sso-trust': true });
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(installMock.mock.calls[0][1]).toMatchObject({ ownersTrusted: true, record: { sso: { client: 'libredb-studio-c-m-1' } } });
+  });
+
+  it('asks for no acknowledgement without single sign-on', async() => {
+    const wrapper = render();
+
+    await flushPromises();
+    await fill(wrapper, { 'libredb-setup-sso': false });
+
+    expect(wrapper.find('[data-testid="libredb-setup-sso-trust"]').exists()).toBe(false);
+  });
+
+  it('asks t for raw text for the labels its checkboxes render as text', async() => {
+    const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+
+    mount(Setup, {
+      global: {
+        mocks: {
+          t: raw, $store: { getters: {}, dispatch: jest.fn() }, $route: { params: { cluster: 'c-m-1' } }
+        },
+        stubs: {
+          Banner: BannerStub, Loading: true, LabeledInput: fieldStub('LabeledInput'), LabeledSelect: fieldStub('LabeledSelect'), RadioGroup: fieldStub('RadioGroup'), Checkbox: fieldStub('Checkbox'), RouterLink: RouterLinkStub, SetupChecks: true
+        },
+      },
+    });
+    await flushPromises();
+
+    const labels = raw.mock.calls.filter((call) => ['libredbStudio.setup.form.sso', 'libredbStudio.setup.form.ssoTrust'].includes(call[0]));
+
+    expect(labels.length).toBeGreaterThanOrEqual(2);
+    expect(labels.every((call) => call[2] === true)).toBe(true);
   });
 
   it('offers only a TLS Secret without cert-manager, and no single sign-on where it is not available', async() => {

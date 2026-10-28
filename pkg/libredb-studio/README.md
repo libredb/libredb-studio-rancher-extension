@@ -11,6 +11,7 @@ The row menu of a CloudNativePG Cluster has "Open in LibreDB Studio" when the us
 A cluster owner sets LibreDB Studio up from the Databases page.
 The setup checks the cluster first, then installs the LibreDB Studio partner chart from Rancher's Partners repository in its own namespace, outside every project, with the host name, certificate and namespaces to discover that the cluster owner chose.
 With a Rancher administrator, it also registers LibreDB Studio as an OIDC client of Rancher, so people sign in with their Rancher account and open only the databases their own Rancher roles let them read; without one, LibreDB Studio keeps its own sign-in, and an administrator can turn single sign-on on later.
+Single sign-on is experimental: owners of the cluster that runs LibreDB Studio will be able to act in Rancher as any user who signs in to LibreDB Studio, so the administrator acknowledges that before it is turned on, and it belongs only on clusters whose owners are trusted that far.
 The Settings page changes the namespaces LibreDB Studio discovers, turns single sign-on on, and uninstalls LibreDB Studio after the release name is typed by hand.
 
 It has no backend of its own: it works through Rancher's API as the signed-in user, never reads a database's Secret, and opens LibreDB Studio, installed in the same cluster, in a new tab.

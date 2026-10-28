@@ -8,7 +8,9 @@ import { parseRecord, serializeRecord, SetupRecord } from './values';
 const configMaps = `/api/v1/namespaces/${ STUDIO_NAMESPACE }/configmaps`;
 
 function configMap(name: string, data: Record<string, string>, resourceVersion?: string): Record<string, unknown> {
-  const metadata = resourceVersion ? { name, labels: { ...MANAGED_LABELS }, resourceVersion } : { name, labels: { ...MANAGED_LABELS } };
+  const metadata = resourceVersion ? {
+    name, labels: { ...MANAGED_LABELS }, resourceVersion
+  } : { name, labels: { ...MANAGED_LABELS } };
 
   return {
     apiVersion: 'v1', kind: 'ConfigMap', metadata, data
@@ -42,5 +44,7 @@ export interface ReadRecord {
 export async function readRecord(store: StoreLike, cluster: string): Promise<ReadRecord> {
   const found = await kubeGet<{ metadata?: { resourceVersion?: string }, data?: Record<string, string> }>(store, cluster, `${ configMaps }/${ RECORD_CONFIGMAP }`);
 
-  return { exists: !!found, record: parseRecord(found?.data?.[RECORD_KEY]), resourceVersion: found?.metadata?.resourceVersion };
+  return {
+    exists: !!found, record: parseRecord(found?.data?.[RECORD_KEY]), resourceVersion: found?.metadata?.resourceVersion
+  };
 }

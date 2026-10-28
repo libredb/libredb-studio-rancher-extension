@@ -49,7 +49,9 @@ const CONTEXT: RancherContext = {
 };
 const HOST = 'studio.example.com';
 /** What the administrator saw and confirmed before single sign-on */
-const CONFIRMED = { host: HOST, namespaces: ['team-a'] };
+const CONFIRMED = {
+  host: HOST, namespaces: ['team-a'], ownersTrusted: true
+};
 
 type Answers = [string | RegExp, unknown][];
 
@@ -63,7 +65,13 @@ const sequence = (...answers: unknown[]) => {
 /** The app at a revision in a Helm state, with the extension's mark */
 const managedApp = (version: number, status: string) => ({
   spec: {
-    version, info: { status }, chart: { metadata: { version: '0.1.111', appVersion: '1.2.1', annotations: MANAGED } }
+    version,
+    info:  { status },
+    chart: {
+      metadata: {
+        version: '0.1.111', appVersion: '1.2.1', annotations: MANAGED
+      }
+    }
   }
 });
 
@@ -130,8 +138,13 @@ function installed({
 
   holder.kube = new FakeKube({
     [NS]:          labelled('libredb-studio'),
-    [RECORD_PATH]: { metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '7' }, data: { 'setup.json': serializeRecord(record) } },
-    [INGRESS]:     { metadata: { name: 'libredb-studio' }, spec: { rules: [{ host: ingressHost }] } },
+    [RECORD_PATH]: {
+      metadata: {
+        name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '7'
+      },
+      data: { 'setup.json': serializeRecord(record) }
+    },
+    [INGRESS]: { metadata: { name: 'libredb-studio' }, spec: { rules: [{ host: ingressHost }] } },
     ...(record.sso ? {
       [CA_PATH]: labelled('libredb-studio-rancher-ca'), [SECRET_PATH]: labelled('libredb-studio-oidc'), [CLIENT]: labelled('libredb-studio-c-m-1', { status: { clientID: 'client-abc' } })
     } : {}),
@@ -143,7 +156,9 @@ function installed({
   });
   holder.store = fakeStore({
     ...setup,
-    find:              { ...setup.find, 'cluster/apps.deployment/libredb-studio/libredb-studio': { status: { readyReplicas: 1 } }, ...find },
+    find: {
+      ...setup.find, 'cluster/apps.deployment/libredb-studio/libredb-studio': { status: { readyReplicas: 1 } }, ...find
+    },
     findLabelSelector: { 'cluster/ui.cattle.io.navlink': [{ metadata: { name: 'libredb-studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } }] },
     requests:          [
       ...override,
@@ -249,7 +264,11 @@ describe('loading Studio\'s settings', () => {
   it('says when Studio\'s namespace was moved into a project', async() => {
     const { store, kube } = installed();
 
-    kube.objects.set(NS, { metadata: { name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' } } });
+    kube.objects.set(NS, {
+      metadata: {
+        name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' }
+      }
+    });
 
     expect((await loadSettings(store, CLUSTER)).inProject).toBe(true);
   });
@@ -330,7 +349,12 @@ describe('changing the discovered namespaces', () => {
       }]
     });
     expect(kube.objects.get(RECORD_PATH)).toStrictEqual({
-      apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '7' }, data: { 'setup.json': serializeRecord(changed) }
+      apiVersion: 'v1',
+      kind:       'ConfigMap',
+      metadata:   {
+        name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '7'
+      },
+      data: { 'setup.json': serializeRecord(changed) }
     });
     expect(run.events.filter((event) => (event as { state: string }).state !== 'running')).toStrictEqual([
       { step: 'upgrade', state: 'done' }, { step: 'saveRecord', state: 'done' }
@@ -357,7 +381,11 @@ describe('changing the discovered namespaces', () => {
   it('refuses while Studio\'s namespace is in a project, whose members could read what Studio keeps there', async() => {
     const { store, kube } = installed();
 
-    kube.objects.set(NS, { metadata: { name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' } } });
+    kube.objects.set(NS, {
+      metadata: {
+        name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' }
+      }
+    });
 
     await expect(saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(IN_PROJECT);
     expect(changes(store)).toStrictEqual([]);
@@ -454,9 +482,7 @@ describe('changing the discovered namespaces', () => {
   });
 
   it('waits for the revision its own upgrade makes, never one someone else made just before it', async() => {
-    const { store } = installed({
-      override: [[`GET ${ APP }`, sequence(managedApp(3, 'deployed'), managedApp(4, 'deployed'), managedApp(4, 'deployed'), managedApp(5, 'failed'))]]
-    });
+    const { store } = installed({ override: [[`GET ${ APP }`, sequence(managedApp(3, 'deployed'), managedApp(4, 'deployed'), managedApp(4, 'deployed'), managedApp(5, 'failed'))]] });
     const result = await saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-b'], options());
 
     expect(result).toStrictEqual({
@@ -477,7 +503,10 @@ describe('changing the discovered namespaces', () => {
   it('writes the record only over the version it read, so a record written meanwhile stands', async() => {
     const holder: { kube?: FakeKube } = {};
     const meanwhile = {
-      metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '8' }, data: { 'setup.json': serializeRecord(SSO_RECORD) }
+      metadata: {
+        name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '8'
+      },
+      data: { 'setup.json': serializeRecord(SSO_RECORD) }
     };
     const target = installed({
       override: [[`POST ${ UPGRADE }`, () => {
@@ -540,7 +569,9 @@ describe('turning single sign-on on', () => {
   it('refuses confirmed namespaces the administrator cannot see now', async() => {
     const { store } = installed();
 
-    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, { host: HOST, namespaces: ['someone-elses'] }, options())).resolves.toStrictEqual({
+    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, {
+      host: HOST, namespaces: ['someone-elses'], ownersTrusted: true
+    }, options())).resolves.toStrictEqual({
       ok: false, failure: { reason: 'badNamespaces' }, undone: []
     });
     expect(changes(store)).toStrictEqual([]);
@@ -562,7 +593,11 @@ describe('turning single sign-on on', () => {
   it('writes no client secret into Studio\'s namespace once it is in a project', async() => {
     const { store, kube } = installed();
 
-    kube.objects.set(NS, { metadata: { name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' } } });
+    kube.objects.set(NS, {
+      metadata: {
+        name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' }
+      }
+    });
 
     await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(IN_PROJECT);
     expect(changes(store)).toStrictEqual([]);
@@ -593,6 +628,15 @@ describe('turning single sign-on on', () => {
 
     expect(result.record?.sso?.rancherCA).toBe(false);
     expect(lines(store)).not.toContain(`POST ${ NS }/configmaps`);
+  });
+
+  it('creates no OIDC client without the administrator\'s acknowledgement of what this cluster\'s owners can then do', async() => {
+    const { store } = installed();
+
+    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, { ...CONFIRMED, ownersTrusted: false }, options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'notAcknowledged' }, undone: []
+    });
+    expect(store.calls).toStrictEqual([]);
   });
 
   it('refuses without Rancher\'s server URL', async() => {
@@ -777,7 +821,12 @@ describe('uninstalling Studio', () => {
     const { store, kube } = installed({ record: SSO_RECORD });
 
     // Someone who can edit ConfigMaps in Studio's namespace dropped single sign-on from the record
-    kube.objects.set(RECORD_PATH, { metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '8' }, data: { 'setup.json': serializeRecord(RECORD) } });
+    kube.objects.set(RECORD_PATH, {
+      metadata: {
+        name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '8'
+      },
+      data: { 'setup.json': serializeRecord(RECORD) }
+    });
 
     const result = await uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options());
 

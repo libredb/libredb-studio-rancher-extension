@@ -6,6 +6,14 @@ Security fixes are released against the latest published release only.
 There is no long-term support branch and no backport policy: if you run an older version, the upgrade path to a fix is the current release.
 The releases page is the authority on what that currently is: <https://github.com/libredb/libredb-studio-rancher-extension/releases>
 
+## Known Risks
+
+These follow from the design and are not vulnerabilities to report.
+
+| Risk | Where | What limits it |
+| --- | --- | --- |
+| Owners of the cluster that runs LibreDB Studio can act in Rancher as any user who signs in to LibreDB Studio | Single sign-on through Rancher, which is experimental | The setup and the Settings page turn single sign-on on only after a Rancher administrator acknowledges this risk; without single sign-on LibreDB Studio keeps its own sign-in. Enable it only on clusters whose owners you trust that far. |
+
 ## Reporting a Vulnerability
 
 Please do not report security vulnerabilities through public GitHub issues.

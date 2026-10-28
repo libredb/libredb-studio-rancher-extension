@@ -66,7 +66,7 @@ const SETTINGS: StudioSettings = {
 const fieldStub = (name: string) => defineComponent({
   name,
   props: {
-    value: { type: [String, Array], default: undefined }, label: { type: String, default: '' }, options: { type: Array, default: () => [] }
+    value: { type: [String, Array, Boolean], default: undefined }, label: { type: String, default: '' }, options: { type: Array, default: () => [] }
   },
   emits: ['update:value'],
   setup(props) {
@@ -91,6 +91,7 @@ const render = () => mount(Settings, {
       Loading:       { template: '<div data-testid="loading" />' },
       LabeledInput:  fieldStub('LabeledInput'),
       LabeledSelect: fieldStub('LabeledSelect'),
+      Checkbox:      fieldStub('Checkbox'),
       RouterLink:    RouterLinkStub,
     },
   },
@@ -305,25 +306,60 @@ describe('settings page', () => {
 
       expect(text(wrapper, 'libredb-settings-sso-confirm')).toContain('%libredbStudio.settings.redirectConfirm%{"uri":"https://studio.example.com/api/auth/oidc/callback"}');
       expect(text(wrapper, 'libredb-settings-sso-confirm')).toContain('%libredbStudio.settings.ssoNamespaces%{"namespaces":"team-a"}');
+      expect(field(wrapper, 'libredb-settings-sso-trust').props()).toMatchObject({ value: false, label: '%libredbStudio.setup.form.ssoTrust%' });
+      expect(disabled(wrapper, 'libredb-settings-sso-confirm-button')).toBe(true);
       expect(ssoMock).not.toHaveBeenCalled();
 
+      field(wrapper, 'libredb-settings-sso-trust').vm.$emit('update:value', true);
+      await flushPromises();
+      expect(disabled(wrapper, 'libredb-settings-sso-confirm-button')).toBe(false);
       await wrapper.find('[data-testid="libredb-settings-sso-confirm-button"]').trigger('click');
       await flushPromises();
 
-      expect(ssoMock).toHaveBeenCalledWith(expect.anything(), 'c-m-1', RECORD, SETTINGS.app, CONTEXT, { host: 'studio.example.com', namespaces: ['team-a'] }, expect.anything());
+      expect(ssoMock).toHaveBeenCalledWith(expect.anything(), 'c-m-1', RECORD, SETTINGS.app, CONTEXT, {
+        host: 'studio.example.com', namespaces: ['team-a'], ownersTrusted: true
+      }, expect.anything());
       expect(wrapper.findAll('[data-testid^="libredb-step-"]').map((item) => item.attributes('data-testid')))
         .toStrictEqual(['libredb-step-oidcClient', 'libredb-step-oidcSecret', 'libredb-step-rancherCA', 'libredb-step-upgrade', 'libredb-step-saveRecord']);
       expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.done.sso%');
     });
 
-    it('can be called off at the confirmation', async() => {
+    it('can be called off at the confirmation, which asks for the acknowledgement afresh', async() => {
       const wrapper = await loaded();
 
       await wrapper.find('[data-testid="libredb-settings-sso-start"]').trigger('click');
+      field(wrapper, 'libredb-settings-sso-trust').vm.$emit('update:value', true);
+      await flushPromises();
       await wrapper.find('[data-testid="libredb-settings-sso-cancel"]').trigger('click');
 
       expect(has(wrapper, 'libredb-settings-sso-confirm')).toBe(false);
       expect(ssoMock).not.toHaveBeenCalled();
+
+      await wrapper.find('[data-testid="libredb-settings-sso-start"]').trigger('click');
+      expect(field(wrapper, 'libredb-settings-sso-trust').props('value')).toBe(false);
+    });
+
+    it('asks t for the acknowledgement as raw text, which the checkbox renders as text', async() => {
+      loadMock.mockResolvedValue(SETTINGS);
+      const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+      const wrapper = mount(Settings, {
+        global: {
+          mocks: {
+            t: raw, $store: { getters: {}, dispatch: jest.fn() }, $route: { params: { cluster: 'c-m-1' } }
+          },
+          stubs: {
+            Banner: BannerStub, Loading: true, LabeledInput: fieldStub('LabeledInput'), LabeledSelect: fieldStub('LabeledSelect'), Checkbox: fieldStub('Checkbox'), RouterLink: RouterLinkStub, StudioStatus: true, SetupChecks: true
+          },
+        },
+      });
+
+      await flushPromises();
+      await wrapper.find('[data-testid="libredb-settings-sso-start"]').trigger('click');
+
+      const asked = raw.mock.calls.filter((call) => call[0] === 'libredbStudio.setup.form.ssoTrust');
+
+      expect(asked.length).toBeGreaterThan(0);
+      expect(asked.every((call) => call[2] === true)).toBe(true);
     });
 
     it('plans no CA step when Rancher has no CA of its own', async() => {
@@ -331,6 +367,8 @@ describe('settings page', () => {
       const wrapper = await loaded({ ...SETTINGS, sso: { ...SETTINGS.sso as NonNullable<StudioSettings['sso']>, context: { ...CONTEXT, cacerts: undefined } } });
 
       await wrapper.find('[data-testid="libredb-settings-sso-start"]').trigger('click');
+      field(wrapper, 'libredb-settings-sso-trust').vm.$emit('update:value', true);
+      await flushPromises();
       await wrapper.find('[data-testid="libredb-settings-sso-confirm-button"]').trigger('click');
 
       expect(has(wrapper, 'libredb-step-rancherCA')).toBe(false);

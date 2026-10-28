@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent } from 'vue';
 import { Banner } from '@components/Banner';
+import { Checkbox } from '@components/Form/Checkbox';
 import { LabeledInput } from '@components/Form/LabeledInput';
 import LabeledSelect from '@shell/components/form/LabeledSelect.vue';
 import Loading from '@shell/components/Loading.vue';
@@ -29,7 +30,7 @@ export default defineComponent({
   name: 'LibreDBSettings',
 
   components: {
-    Banner, LabeledInput, LabeledSelect, Loading, SetupChecks, StepList, StudioStatus
+    Banner, Checkbox, LabeledInput, LabeledSelect, Loading, SetupChecks, StepList, StudioStatus
   },
 
   data() {
@@ -38,6 +39,7 @@ export default defineComponent({
       namespaces:    [] as string[],
       confirm:       '',
       confirmingSso: false,
+      ownersTrusted: false,
       busy:          false,
       kind:          undefined as 'namespaces' | 'sso' | 'uninstall' | undefined,
       steps:         [] as StepView[],
@@ -91,6 +93,7 @@ export default defineComponent({
         this.settings = settings;
         this.namespaces = settings.record ? settings.record.namespaces.slice() : [];
         this.confirmingSso = false;
+        this.ownersTrusted = false;
       });
     },
 
@@ -139,6 +142,7 @@ export default defineComponent({
 
     cancelSso(): void {
       this.confirmingSso = false;
+      this.ownersTrusted = false;
     },
 
     turnOnSso(): Promise<void> {
@@ -147,8 +151,10 @@ export default defineComponent({
       const steps: ChangeStepId[] = ['oidcClient', 'oidcSecret'];
       const options = this.start('sso', steps.concat(sso.context.cacerts ? ['rancherCA'] : [], ['upgrade', 'saveRecord']));
 
-      // Exactly what the confirmation showed: the redirect's host and the namespaces to discover
-      const confirmed = { host: settings.host as string, namespaces: (this.record as SetupRecord).namespaces.slice() };
+      // Exactly what the confirmation showed: the redirect's host, the namespaces to discover, and the acknowledgement
+      const confirmed = {
+        host: settings.host as string, namespaces: (this.record as SetupRecord).namespaces.slice(), ownersTrusted: this.ownersTrusted
+      };
 
       return enableSso(this.$store as StoreLike, this.cluster, this.record as SetupRecord, settings.app as AppInfo, sso.context, confirmed, options)
         .then(this.finish, this.broke);
@@ -325,10 +331,16 @@ export default defineComponent({
             >
               <p>{{ t('libredbStudio.settings.redirectConfirm', { uri: redirectUri }, true) }}</p>
               <p>{{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }, true) }}</p>
+              <Checkbox
+                v-model:value="ownersTrusted"
+                class="mb-10"
+                :label="t('libredbStudio.setup.form.ssoTrust', {}, true)"
+                data-testid="libredb-settings-sso-trust"
+              />
               <button
                 type="button"
                 class="btn role-primary mr-10"
-                :disabled="busy"
+                :disabled="busy || !ownersTrusted"
                 data-testid="libredb-settings-sso-confirm-button"
                 @click="turnOnSso"
               >
