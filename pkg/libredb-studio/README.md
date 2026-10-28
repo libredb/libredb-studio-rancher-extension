@@ -6,6 +6,7 @@ Status: in development, not yet listed in any extension catalog, and not ready f
 
 The extension adds a LibreDB Studio product to the cluster explorer of every cluster where the signed-in user can see CloudNativePG Clusters.
 Its Databases page shows whether LibreDB Studio is set up and running in the cluster, and lists the CloudNativePG Clusters with an Open button for each one the user may open, or the reason a row cannot be opened and who can fix it.
+The row menu of a CloudNativePG Cluster has "Open in LibreDB Studio" when the user may open it, and its view page shows the host, database and user, never a password, with the same Open button or the reason.
 It has no backend of its own: it reads through Rancher's API as the signed-in user, never reads a Secret, and opens LibreDB Studio, installed in the same cluster, in a new tab.
 
 - Supported Rancher versions: 2.15 and later.

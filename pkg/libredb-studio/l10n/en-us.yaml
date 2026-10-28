@@ -11,6 +11,13 @@ libredbStudio:
       pending: Checking access
       denied: You cannot read the Secret {secret} in {namespace}, which holds the credentials. A project owner can grant it.
       failed: Access could not be checked. Reload the page to try again.
+  open:
+    refused: LibreDB Studio was not opened
+  panel:
+    title: LibreDB Studio
+    host: Host
+    database: Database
+    user: User
   status:
     not-set-up: LibreDB Studio is not set up in this cluster. A cluster owner can set it up.
     ready: LibreDB Studio is running in this cluster.
