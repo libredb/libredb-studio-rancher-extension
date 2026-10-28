@@ -220,7 +220,7 @@ export default defineComponent({
       v-else-if="!settings.canChange"
       color="warning"
       data-testid="libredb-settings-not-owner"
-      :label="t('libredbStudio.settings.notOwner')"
+      :label="t('libredbStudio.settings.notOwner', {}, true)"
     />
     <template v-else>
       <StudioStatus
@@ -232,13 +232,13 @@ export default defineComponent({
         v-if="settings.aggregation && settings.aggregation.state !== 'ok'"
         color="warning"
         data-testid="libredb-settings-aggregation"
-        :label="t(`libredbStudio.setup.checks.aggregation.${ settings.aggregation.reason }`)"
+        :label="t(`libredbStudio.setup.checks.aggregation.${ settings.aggregation.reason }`, {}, true)"
       />
       <Banner
         v-if="settings.inProject"
         color="error"
         data-testid="libredb-settings-in-project"
-        :label="t('libredbStudio.settings.inProject', { namespace })"
+        :label="t('libredbStudio.settings.inProject', { namespace }, true)"
       />
       <template v-if="kind">
         <StepList
@@ -250,7 +250,7 @@ export default defineComponent({
           v-if="result"
           :color="result.ok ? 'success' : 'error'"
           data-testid="libredb-settings-result"
-          :label="t(`libredbStudio.settings.${ result.ok ? 'done' : 'failed' }.${ kind }`)"
+          :label="t(`libredbStudio.settings.${ result.ok ? 'done' : 'failed' }.${ kind }`, {}, true)"
         />
         <p
           v-if="result && result.failure && !result.failedStep"
@@ -264,19 +264,19 @@ export default defineComponent({
         v-if="settings.recordProblem"
         color="error"
         data-testid="libredb-settings-untrusted"
-        :label="t('libredbStudio.setup.failure.untrustedRecord', { field: settings.recordProblem })"
+        :label="t('libredbStudio.setup.failure.untrustedRecord', { field: settings.recordProblem }, true)"
       />
       <Banner
         v-else-if="settings.recordUnreadable"
         color="warning"
         data-testid="libredb-settings-unreadable"
-        :label="t('libredbStudio.settings.recordUnreadable', { namespace, name: recordName })"
+        :label="t('libredbStudio.settings.recordUnreadable', { namespace, name: recordName }, true)"
       />
       <Banner
         v-else-if="!record && (settings.app || settings.link)"
         color="info"
         data-testid="libredb-settings-other"
-        :label="t('libredbStudio.settings.otherInstall')"
+        :label="t('libredbStudio.settings.otherInstall', {}, true)"
       />
       <div
         v-else-if="!record"
@@ -284,7 +284,7 @@ export default defineComponent({
       >
         <Banner
           color="info"
-          :label="t('libredbStudio.settings.notSetUp')"
+          :label="t('libredbStudio.settings.notSetUp', {}, true)"
         />
         <router-link
           class="btn role-primary"
@@ -299,7 +299,7 @@ export default defineComponent({
           v-if="settings.app && !settings.app.managed"
           color="warning"
           data-testid="libredb-settings-unmarked"
-          :label="t('libredbStudio.settings.unmarked')"
+          :label="t('libredbStudio.settings.unmarked', {}, true)"
         />
         <dl
           class="summary"
@@ -408,7 +408,7 @@ export default defineComponent({
             v-if="!settings.ssoAdmin"
             color="info"
             data-testid="libredb-settings-sso-admin-only"
-            :label="t('libredbStudio.settings.ssoAdminOnly')"
+            :label="t('libredbStudio.settings.ssoAdminOnly', {}, true)"
           />
           <template v-else>
             <div
@@ -456,7 +456,7 @@ export default defineComponent({
               <h4>{{ t('libredbStudio.settings.turnOffTitle', {}, true) }}</h4>
               <Banner
                 color="warning"
-                :label="t('libredbStudio.settings.turnOffWarning', { client: record.sso.client, namespace })"
+                :label="t('libredbStudio.settings.turnOffWarning', { client: record.sso.client, namespace }, true)"
               />
               <p>{{ t('libredbStudio.settings.ssoNamespaces', { namespaces: record.namespaces.join(', ') }, true) }}</p>
               <LabeledInput
@@ -481,7 +481,7 @@ export default defineComponent({
           <h3>{{ t('libredbStudio.settings.uninstallTitle', {}, true) }}</h3>
           <Banner
             color="warning"
-            :label="t('libredbStudio.settings.uninstallWarning', { namespace })"
+            :label="t('libredbStudio.settings.uninstallWarning', { namespace }, true)"
           />
           <LabeledInput
             v-model:value="confirm"

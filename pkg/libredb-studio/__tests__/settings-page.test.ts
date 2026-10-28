@@ -176,6 +176,54 @@ describe('settings page', () => {
     expect(asText.every((call) => call[2] === true)).toBe(true);
   });
 
+  it('asks t for raw text for every banner, which escapes its label itself', async() => {
+    // A text t escaped already would show &#39; for an apostrophe, as in the unmarked and in-project banners
+    const bannersOf = async(settings: StudioSettings, act?: (wrapper: VueWrapper) => Promise<void>) => {
+      loadMock.mockResolvedValue(settings);
+      const raw = jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+      const wrapper = mount(Settings, {
+        global: {
+          mocks: {
+            t: raw, $store: { getters: {}, dispatch: jest.fn() }, $route: { params: { cluster: 'c-m-1' } }
+          },
+          stubs: {
+            Banner: BannerStub, Loading: true, LabeledInput: fieldStub('LabeledInput'), LabeledSelect: fieldStub('LabeledSelect'), RouterLink: RouterLinkStub, StudioStatus: true
+          },
+        },
+      });
+
+      await flushPromises();
+      await act?.(wrapper);
+
+      const labels = wrapper.findAllComponents(BannerStub).map((banner) => banner.props('label') as string);
+
+      return { labels, asked: raw.mock.calls.filter((call) => labels.includes(call[0])) };
+    };
+    const ssoRecord = {
+      ...RECORD,
+      sso: {
+        client: 'libredb-studio-c-m-1', issuer: 'https://rancher.example.com/oidc', scope: 'openid profile groups', rancherCA: true
+      }
+    };
+    const warned = await bannersOf({
+      ...SETTINGS, inProject: true, app: { ...SETTINGS.app!, managed: false }, aggregation: { id: 'aggregation', state: 'warning', reason: 'off' }
+    });
+    const ssoOn = await bannersOf({
+      ...SETTINGS, record: ssoRecord, sso: undefined, ssoAdmin: true
+    }, async(wrapper) => {
+      rotateMock.mockResolvedValue({ ok: true, undone: [] });
+      await wrapper.find('[data-testid="libredb-settings-rotate-start"]').trigger('click');
+      await wrapper.find('[data-testid="libredb-settings-rotate-confirm-button"]').trigger('click');
+      await flushPromises();
+    });
+
+    expect(warned.labels).toStrictEqual([
+      'libredbStudio.setup.checks.aggregation.off', 'libredbStudio.settings.inProject', 'libredbStudio.settings.unmarked', 'libredbStudio.settings.uninstallWarning'
+    ]);
+    expect(ssoOn.labels).toStrictEqual(['libredbStudio.settings.done.rotate', 'libredbStudio.settings.turnOffWarning', 'libredbStudio.settings.uninstallWarning']);
+    expect([...warned.asked, ...ssoOn.asked].every((call) => call[2] === true)).toBe(true);
+  });
+
   it('says only that the settings need an owner of the cluster to anyone else', async() => {
     const wrapper = await loaded({
       canChange: false, recordUnreadable: false, namespaces: []
