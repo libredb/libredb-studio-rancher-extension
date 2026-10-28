@@ -109,7 +109,7 @@ describe('translations', () => {
     // The restart empties Studio's in-memory record of each person's groups, so no session outlives it
     expect(lookup('libredbStudio.settings.rotateWarning')).toBe(
       'Rancher replaces the client secret of {client} at once, and LibreDB Studio restarts with the new one. Signing in fails until it has restarted, and the restart ' +
-      'signs everyone out of LibreDB Studio once: people still signed in to Rancher are signed in again on their next click, everyone else sees Rancher\'s sign-in page.'
+      'signs everyone out of LibreDB Studio once: people still signed in to Rancher are signed in again automatically, everyone else sees Rancher\'s sign-in page.'
     );
   });
 

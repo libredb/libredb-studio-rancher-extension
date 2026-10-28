@@ -54,7 +54,7 @@ libredbStudio:
     rotateTitle: Client secret
     rotateIntro: Owners of this cluster can read the OIDC client secret in LibreDB Studio's namespace. Rotate it when one of them leaves, or whenever it may have been exposed.
     rotate: Rotate the client secret
-    rotateWarning: "Rancher replaces the client secret of {client} at once, and LibreDB Studio restarts with the new one. Signing in fails until it has restarted, and the restart signs everyone out of LibreDB Studio once: people still signed in to Rancher are signed in again on their next click, everyone else sees Rancher's sign-in page."
+    rotateWarning: "Rancher replaces the client secret of {client} at once, and LibreDB Studio restarts with the new one. Signing in fails until it has restarted, and the restart signs everyone out of LibreDB Studio once: people still signed in to Rancher are signed in again automatically, everyone else sees Rancher's sign-in page."
     turnOffTitle: Turn single sign-on off
     turnOffWarning: Turning single sign-on off upgrades LibreDB Studio to its own sign-in with the access review off, so that only its admin sees the discovered databases, then deletes the OIDC client {client} from Rancher, and the client credentials and Rancher's CA from the namespace {namespace}.
     turnOff: Turn off single sign-on
