@@ -1,2 +1,6 @@
 libredbStudio:
   productName: LibreDB Studio
+  databases:
+    label: Databases
+product:
+  libredb: LibreDB Studio
