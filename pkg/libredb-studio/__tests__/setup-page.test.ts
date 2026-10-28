@@ -1,4 +1,4 @@
-import { flushPromises, mount, VueWrapper } from '@vue/test-utils';
+import { flushPromises, mount, RouterLinkStub, VueWrapper } from '@vue/test-utils';
 import { defineComponent, h } from 'vue';
 import Setup from '../pages/Setup.vue';
 import SetupChecks from '../components/SetupChecks.vue';
@@ -84,6 +84,7 @@ const render = () => mount(Setup, {
       LabeledSelect: fieldStub('LabeledSelect'),
       RadioGroup:    fieldStub('RadioGroup'),
       Checkbox:      fieldStub('Checkbox'),
+      RouterLink:    RouterLinkStub,
     },
   },
 });
@@ -136,6 +137,49 @@ describe('setup page', () => {
 
     expect(preflightMock).toHaveBeenCalledTimes(2);
     expect(wrapper.find('[data-testid="libredb-setup-form"]').exists()).toBe(true);
+  });
+
+  it('sends a cluster owner to Settings when Studio is already set up here', async() => {
+    preflightMock.mockResolvedValueOnce({
+      ...PREFLIGHT,
+      canInstall: false,
+      checks:     [{
+        id: 'installed', state: 'error', reason: 'leftover'
+      }]
+    });
+    const wrapper = render();
+
+    await flushPromises();
+
+    expect(wrapper.findComponent(RouterLinkStub).props('to')).toStrictEqual({ name: 'c-cluster-libredb-settings', params: { cluster: 'c-m-1', product: 'libredb' } });
+  });
+
+  it('offers no way to Settings when something else stops the install', async() => {
+    preflightMock.mockResolvedValueOnce({
+      ...PREFLIGHT,
+      canInstall: false,
+      checks:     [{
+        id: 'cnpg', state: 'error', reason: 'missing'
+      }]
+    });
+    const wrapper = render();
+
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="libredb-setup-go-settings"]').exists()).toBe(false);
+  });
+
+  it('shows where Rancher will send people back, once the host name is a valid one', async() => {
+    const wrapper = render();
+
+    await flushPromises();
+    expect(wrapper.find('[data-testid="libredb-setup-redirect"]').exists()).toBe(false);
+
+    await fill(wrapper, { 'libredb-setup-host': 'Studio.Example.com' });
+    expect(wrapper.find('[data-testid="libredb-setup-redirect"]').text()).toBe('%libredbStudio.setup.form.redirect%{"uri":"https://studio.example.com/api/auth/oidc/callback"}');
+
+    await fill(wrapper, { 'libredb-setup-sso': false });
+    expect(wrapper.find('[data-testid="libredb-setup-redirect"]').exists()).toBe(false);
   });
 
   it('starts from the preflight\'s choices', async() => {
@@ -233,6 +277,7 @@ describe('setup page', () => {
       expect(wrapper.find('[data-testid="libredb-setup-open"]').attributes()).toMatchObject({
         href: 'https://studio.example.com', target: '_blank', rel: 'noopener noreferrer nofollow'
       });
+      expect(wrapper.findComponent(RouterLinkStub).props('to')).toMatchObject({ name: 'c-cluster-libredb-settings' });
     });
 
     it('says how to sign in when Studio keeps its own sign-in', async() => {

@@ -64,7 +64,7 @@ describe('translations', () => {
     const keys = [
       ...under('', ['title', 'intro', 'blocked', 'checkAgain', 'failed', 'doneSso', 'doneLocal', 'undoneTitle']),
       ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
-      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'localSignIn', 'install']),
+      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'redirect', 'localSignIn', 'install']),
       ...under('form.errors.', ['host', 'ingressClass', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'tooManyNamespaces', 'sso']),
       ...under('steps.', ['namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready', 'upgrade', 'saveRecord']),
       ...under('state.', ['pending', 'running', 'done', 'skipped', 'failed']),
@@ -74,6 +74,9 @@ describe('translations', () => {
         'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
         'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
       ]),
+      ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
+        'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle',
+        'done.namespaces', 'done.sso', 'done.uninstall', 'failed.namespaces', 'failed.sso', 'failed.uninstall'].map((key) => `libredbStudio.settings.${ key }`),
     ];
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);

@@ -26,6 +26,42 @@ libredbStudio:
     failed: LibreDB Studio is set up in this cluster, but its state could not be read. Reload the page to try again.
     open: Open LibreDB Studio
     severalLinks: This cluster has {count} LibreDB Studio links; this page uses {name}.
+  settings:
+    label: Settings
+    title: LibreDB Studio settings
+    notOwner: The settings of LibreDB Studio need an owner of this cluster.
+    notSetUp: LibreDB Studio is not set up in this cluster.
+    otherInstall: LibreDB Studio in this cluster was not set up with this extension, so change it in Apps, Installed Apps.
+    recordUnreadable: The setup record {namespace}/{name} cannot be read, so change LibreDB Studio in Apps, Installed Apps.
+    host: Host
+    unknownHost: Unknown
+    chart: Chart
+    chartValue: 'libredb-studio {chartVersion}, LibreDB Studio {appVersion}'
+    noApp: The app is not installed.
+    signIn: Sign-in
+    ssoOn: Rancher single sign-on, through the OIDC client {client}
+    ssoOff: Studio's own sign-in
+    save: Save
+    ssoTitle: Single sign-on
+    ssoIntro: Let people sign in with their Rancher account. LibreDB Studio is upgraded, and from then on each person opens only the databases their own Rancher roles let them read.
+    enableSso: Turn on single sign-on
+    redirectConfirm: Rancher will send people back to {uri} after they sign in. Confirm only if this is the address of LibreDB Studio.
+    ssoNamespaces: 'LibreDB Studio will go on discovering these namespaces: {namespaces}.'
+    confirm: Confirm
+    cancel: Cancel
+    uninstallTitle: Uninstall
+    uninstallWarning: Uninstalling removes the LibreDB Studio app and its data volume, which the chart does not keep, the Secrets and ConfigMaps the setup created, and the namespace {namespace} when the setup created it and nothing else lives there. The OIDC client is deleted only for a Rancher administrator.
+    typeName: Type {name} to confirm
+    uninstall: Uninstall
+    uninstalledTitle: What became of each part
+    done:
+      namespaces: LibreDB Studio now discovers the chosen namespaces.
+      sso: Single sign-on through Rancher is on.
+      uninstall: LibreDB Studio is uninstalled.
+    failed:
+      namespaces: The namespaces could not be changed.
+      sso: Single sign-on could not be turned on.
+      uninstall: LibreDB Studio could not be uninstalled completely.
   setup:
     title: Set up LibreDB Studio
     intro: Install LibreDB Studio in this cluster in Rancher mode, from the LibreDB Studio partner chart, so that people open the CloudNativePG databases of the namespaces you choose with their own Rancher permissions.
@@ -96,6 +132,7 @@ libredbStudio:
       namespaces: Namespaces to discover
       namespacesHelp: Studio lists the CloudNativePG databases of these namespaces, each one only to the people who may read its credential Secret.
       sso: Sign in with Rancher (single sign-on)
+      redirect: After they sign in, Rancher will send people back to {uri}.
       localSignIn: Without single sign-on, Studio keeps its own sign-in, and lists the discovered databases to its admin only. A Rancher administrator can turn single sign-on on later from Settings.
       install: Install
       errors:

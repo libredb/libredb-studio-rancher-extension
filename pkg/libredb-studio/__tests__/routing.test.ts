@@ -1,7 +1,8 @@
 import routes from '../routing';
 import Databases from '../pages/Databases.vue';
 import Setup from '../pages/Setup.vue';
-import { PRODUCT_NAME, DATABASES_ROUTE, SETUP_ROUTE } from '../config';
+import Settings from '../pages/Settings.vue';
+import { PRODUCT_NAME, DATABASES_ROUTE, SETUP_ROUTE, SETTINGS_ROUTE } from '../config';
 import { getProductFromRoute } from '@shell/utils/router';
 
 // The shell's table pulls in the whole list stack, which the dashboard provides at run time; the
@@ -9,8 +10,8 @@ import { getProductFromRoute } from '@shell/utils/router';
 jest.mock('@shell/components/PaginatedResourceTable.vue', () => ({ __esModule: true, default: { name: 'PaginatedResourceTable', render: () => null } }));
 
 describe('routes', () => {
-  it('adds the Databases and Setup pages under the cluster explorer\'s default layout', () => {
-    expect(routes.map(({ parent }) => parent)).toStrictEqual(['default', 'default']);
+  it('adds the Databases, Setup and Settings pages under the cluster explorer\'s default layout', () => {
+    expect(routes.map(({ parent }) => parent)).toStrictEqual(['default', 'default', 'default']);
     expect(routes.map(({ route }) => ({
       name: route.name, path: route.path, meta: route.meta
     }))).toStrictEqual([
@@ -19,6 +20,9 @@ describe('routes', () => {
       },
       {
         name: SETUP_ROUTE, path: '/c/:cluster/libredb/setup', meta: { product: PRODUCT_NAME }
+      },
+      {
+        name: SETTINGS_ROUTE, path: '/c/:cluster/libredb/settings', meta: { product: PRODUCT_NAME }
       },
     ]);
   });
@@ -29,9 +33,10 @@ describe('routes', () => {
   });
 
   it('loads each page as its own chunk on the first visit', async() => {
-    const [databases, setup] = routes;
+    const [databases, setup, settings] = routes;
 
     await expect(databases.route.component()).resolves.toMatchObject({ default: Databases });
     await expect(setup.route.component()).resolves.toMatchObject({ default: Setup });
+    await expect(settings.route.component()).resolves.toMatchObject({ default: Settings });
   });
 });

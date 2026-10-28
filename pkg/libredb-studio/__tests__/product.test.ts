@@ -1,7 +1,9 @@
 import { IPlugin } from '@shell/core/types';
 import { getProductFromRoute } from '@shell/utils/router';
 import { init } from '../product';
-import { PRODUCT_NAME, DATABASES_PAGE, DATABASES_ROUTE, CNPG_CLUSTER_TYPE } from '../config';
+import {
+  PRODUCT_NAME, DATABASES_PAGE, DATABASES_ROUTE, CNPG_CLUSTER_TYPE, SETTINGS_PAGE, SETTINGS_ROUTE
+} from '../config';
 
 describe('product', () => {
   const dsl = () => ({
@@ -40,7 +42,24 @@ describe('product', () => {
       weight:     100,
       route:      { name: DATABASES_ROUTE, params: { product: PRODUCT_NAME } },
     });
-    expect(calls.basicType).toHaveBeenCalledWith([DATABASES_PAGE]);
+    expect(calls.basicType).toHaveBeenCalledWith([DATABASES_PAGE, SETTINGS_PAGE]);
+  });
+
+  it('shows Settings below it only to someone who could create the chart\'s cluster roles, the cluster\'s owners', () => {
+    const calls = dsl();
+
+    init({ DSL: () => calls } as unknown as IPlugin, {});
+
+    expect(calls.virtualType).toHaveBeenCalledWith({
+      name:       SETTINGS_PAGE,
+      labelKey:   'libredbStudio.settings.label',
+      namespaced: false,
+      weight:     90,
+      ifHaveType: 'rbac.authorization.k8s.io.clusterrole',
+      ifHaveVerb: 'POST',
+      route:      { name: SETTINGS_ROUTE, params: { product: PRODUCT_NAME } },
+    });
+    expect(SETTINGS_ROUTE).toBe('c-cluster-libredb-settings');
   });
 
   it('uses a product id the shell reads back from the route name', () => {

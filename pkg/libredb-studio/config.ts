@@ -14,3 +14,7 @@ export const DATABASES_ROUTE = `c-cluster-${ PRODUCT_NAME }-${ DATABASES_PAGE }`
 /** F6, the setup wizard; reached from the Databases page and from Settings, not from the navigation */
 export const SETUP_PAGE = 'setup';
 export const SETUP_ROUTE = `c-cluster-${ PRODUCT_NAME }-${ SETUP_PAGE }`;
+
+/** F7, Studio's settings; in the navigation for the cluster's owners */
+export const SETTINGS_PAGE = 'settings';
+export const SETTINGS_ROUTE = `c-cluster-${ PRODUCT_NAME }-${ SETTINGS_PAGE }`;

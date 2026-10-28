@@ -8,8 +8,11 @@ import LabeledSelect from '@shell/components/form/LabeledSelect.vue';
 import Loading from '@shell/components/Loading.vue';
 import SetupChecks from '../components/SetupChecks.vue';
 import StepList from '../components/StepList.vue';
+import { PRODUCT_NAME, SETTINGS_ROUTE } from '../config';
 import { failureOf } from '../services/setup/failure';
-import { initialForm, planFrom, validateForm } from '../services/setup/form';
+import {
+  initialForm, isHostName, normalizeHost, planFrom, validateForm
+} from '../services/setup/form';
 import { installStudio, plannedSteps } from '../services/setup/install';
 import { STUDIO_NAMESPACE } from '../services/setup/names';
 import { runPreflight } from '../services/setup/preflight';
@@ -58,6 +61,22 @@ export default defineComponent({
 
     tlsOptions(): string[] {
       return this.preflight?.clusterIssuers.length ? ['secret', 'cert-manager'] : ['secret'];
+    },
+
+    /** The address Rancher sends people back to, shown before the install registers it */
+    redirectUri(): string | undefined {
+      const host = normalizeHost(this.form?.host || '');
+
+      return isHostName(host) ? `https://${ host }/api/auth/oidc/callback` : undefined;
+    },
+
+    /** Studio is already here, which Settings changes or removes */
+    alreadySetUp(): boolean {
+      return !!this.preflight?.checks.some((check) => check.id === 'installed' && check.state === 'error');
+    },
+
+    settingsRoute(): Record<string, unknown> {
+      return { name: SETTINGS_ROUTE, params: { cluster: this.cluster, product: PRODUCT_NAME } };
     },
 
     tlsLabels(): string[] {
@@ -143,12 +162,20 @@ export default defineComponent({
         />
         <button
           type="button"
-          class="btn role-secondary"
+          class="btn role-secondary mr-10"
           data-testid="libredb-setup-check-again"
           @click="check"
         >
           {{ t('libredbStudio.setup.checkAgain') }}
         </button>
+        <router-link
+          v-if="alreadySetUp"
+          class="btn role-primary"
+          :to="settingsRoute"
+          data-testid="libredb-setup-go-settings"
+        >
+          {{ t('libredbStudio.settings.label') }}
+        </router-link>
       </div>
       <form
         v-else-if="phase === 'form' && form"
@@ -211,6 +238,12 @@ export default defineComponent({
           :disabled="!preflight.canUseSso"
           data-testid="libredb-setup-sso"
         />
+        <p
+          v-if="form.sso && redirectUri"
+          data-testid="libredb-setup-redirect"
+        >
+          {{ t('libredbStudio.setup.form.redirect', { uri: redirectUri }) }}
+        </p>
         <Banner
           v-if="!form.sso"
           color="info"
@@ -258,6 +291,13 @@ export default defineComponent({
             rel="noopener noreferrer nofollow"
             data-testid="libredb-setup-open"
           >{{ t('libredbStudio.status.open') }}</a>
+          <router-link
+            class="btn role-secondary"
+            :to="settingsRoute"
+            data-testid="libredb-setup-settings"
+          >
+            {{ t('libredbStudio.settings.label') }}
+          </router-link>
         </div>
         <div
           v-else-if="phase === 'failed' && result"

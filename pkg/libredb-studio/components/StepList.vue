@@ -28,6 +28,11 @@ export default defineComponent({
       type:    Array as PropType<UndoEvent[]>,
       default: () => [],
     },
+    /** The heading over what became of each part: removed again after a failure, or uninstalled */
+    undoneTitleKey: {
+      type:    String,
+      default: 'libredbStudio.setup.undoneTitle',
+    },
   },
 
   data() {
@@ -62,7 +67,7 @@ export default defineComponent({
       </li>
     </ol>
     <template v-if="undone.length">
-      <h4>{{ t('libredbStudio.setup.undoneTitle') }}</h4>
+      <h4>{{ t(undoneTitleKey) }}</h4>
       <ul data-testid="libredb-undone">
         <li
           v-for="item in undone"
