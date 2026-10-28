@@ -2,11 +2,13 @@ import { CNPG_CLUSTER_TYPE } from '../../config';
 import { StudioLink, usableToURL } from '../navlink';
 import type { StoreLike } from '../types';
 import { StepFailure } from './failure';
-import { kube, kubeGet, kubeMetadataList, kubePatch } from './k8s';
 import {
-  CHART_NAME, CHART_REPO, MANAGED_LABELS, RELEASE_NAME, STUDIO_NAMESPACE, isManaged
+  kube, kubeGet, kubeMetadataList, kubePatch, ListedMetadata
+} from './k8s';
+import {
+  CERT_MANAGER_TLS_SECRET, CHART_NAME, CHART_REPO, MANAGED_LABELS, RELEASE_NAME, STUDIO_NAMESPACE, isManaged
 } from './names';
-import { chartValues, SetupRecord } from './values';
+import { chartValues, SetupRecord, TlsChoice } from './values';
 import { waitFor, WaitOptions } from './wait';
 
 /**
@@ -318,22 +320,36 @@ const KUBE_ROOT_CA = 'kube-root-ca.crt';
 const SERVICE_ACCOUNT_ANNOTATION = 'kubernetes.io/service-account.name';
 
 /**
+ * Whether a Secret is the TLS Secret cert-manager issued for the chart's Ingress on a cert-manager
+ * install: named as the setup names it and annotated by cert-manager as issued from the
+ * ClusterIssuer the setup chose. cert-manager does not delete it when the Ingress goes, so it is
+ * left once the app is removed although nobody added it.
+ */
+function issuedForStudio(item: ListedMetadata, tls: TlsChoice): boolean {
+  const annotations = item.metadata?.annotations || {};
+
+  return tls.source === 'cert-manager' && item.metadata?.name === CERT_MANAGER_TLS_SECRET &&
+    annotations['cert-manager.io/issuer-name'] === tls.clusterIssuer && annotations['cert-manager.io/issuer-kind'] === 'ClusterIssuer';
+}
+
+/**
  * The Secrets and ConfigMaps left in a namespace that do not carry the extension's labels, such as a
  * TLS Secret its owner created, each as `<Kind> <name>`. Deleting the namespace would delete them, so
  * while any is left it stays. Both lists are read as metadata alone, so no Secret's data reaches the
- * browser. Ignored: what is being deleted, a service account's token Secret, and the CA ConfigMap
- * Kubernetes writes into every namespace. A list that fails throws.
+ * browser. Ignored: what is being deleted, a service account's token Secret, the CA ConfigMap
+ * Kubernetes writes into every namespace, and on a cert-manager install the TLS Secret cert-manager
+ * issued for the chart's Ingress. A list that fails throws.
  */
-export async function unmanagedLeft(store: StoreLike, cluster: string, namespace: string): Promise<string[]> {
+export async function unmanagedLeft(store: StoreLike, cluster: string, namespace: string, tls: TlsChoice): Promise<string[]> {
   const inNamespace = (kind: string) => `/api/v1/namespaces/${ namespace }/${ kind }`;
   const [secrets, configMaps] = await Promise.all([
     kubeMetadataList(store, cluster, inNamespace('secrets')),
     kubeMetadataList(store, cluster, inNamespace('configmaps')),
   ]);
-  const left = (item: { metadata?: { labels?: Record<string, string>, deletionTimestamp?: string } }) => !item.metadata?.deletionTimestamp && !isManaged(item.metadata?.labels);
+  const left = (item: ListedMetadata) => !item.metadata?.deletionTimestamp && !isManaged(item.metadata?.labels);
 
   return [
-    ...secrets.filter((item) => left(item) && !item.metadata?.annotations?.[SERVICE_ACCOUNT_ANNOTATION]).map((item) => `Secret ${ item.metadata?.name }`),
+    ...secrets.filter((item) => left(item) && !item.metadata?.annotations?.[SERVICE_ACCOUNT_ANNOTATION] && !issuedForStudio(item, tls)).map((item) => `Secret ${ item.metadata?.name }`),
     ...configMaps.filter((item) => left(item) && item.metadata?.name !== KUBE_ROOT_CA).map((item) => `ConfigMap ${ item.metadata?.name }`),
   ];
 }

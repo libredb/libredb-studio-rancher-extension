@@ -51,6 +51,11 @@ const ssoPlan = (record: SetupRecord = RECORD): SetupPlan => ({
 });
 const localPlan = (): SetupPlan => ({ cluster: CLUSTER, record: LOCAL_RECORD });
 
+/** The annotations cert-manager puts on a Secret it issued from a ClusterIssuer */
+const ISSUED_BY = (issuer: string) => ({
+  'cert-manager.io/issuer-name': issuer, 'cert-manager.io/issuer-kind': 'ClusterIssuer', 'cert-manager.io/issuer-group': 'cert-manager.io'
+});
+
 /** Answers one after another, then the last one for good */
 const sequence = (...answers: unknown[]) => {
   let next = 0;
@@ -586,6 +591,47 @@ describe('installing Studio', () => {
       const { run } = await install(localPlan(), target);
 
       expect(run.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
+    });
+
+    it('removes the namespace past the TLS Secret cert-manager issued from the chosen issuer, which cert-manager leaves behind', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+      const plan: SetupPlan = { cluster: CLUSTER, record: { ...LOCAL_RECORD, tls: { source: 'cert-manager', clusterIssuer: 'letsencrypt' } } };
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls', annotations: ISSUED_BY('letsencrypt') } });
+      const { run } = await install(plan, target);
+
+      expect(run.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
+    });
+
+    it.each([
+      ['carries no issuer annotations', 'cert-manager', undefined],
+      ['names another issuer', 'cert-manager', ISSUED_BY('other')],
+      ['names an Issuer, not a ClusterIssuer', 'cert-manager', { ...ISSUED_BY('letsencrypt'), 'cert-manager.io/issuer-kind': 'Issuer' }],
+      ['was issued but the install chose a Secret of its own', 'secret', ISSUED_BY('letsencrypt')],
+    ])('keeps the namespace while a libredb-studio-tls Secret that %s is left', async(_, source, annotations) => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+      const tls: SetupRecord['tls'] = source === 'cert-manager' ? { source: 'cert-manager', clusterIssuer: 'letsencrypt' } : { source: 'secret', secretName: 'libredb-studio-tls' };
+      const plan: SetupPlan = { cluster: CLUSTER, record: { ...LOCAL_RECORD, tls } };
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls', annotations } });
+      const { run } = await install(plan, target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'unmanagedLeft', args: { namespace: 'libredb-studio', objects: 'Secret libredb-studio-tls' } }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
+    });
+
+    it('keeps the namespace while another Secret issued from the chosen issuer is left', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+      const plan: SetupPlan = { cluster: CLUSTER, record: { ...LOCAL_RECORD, tls: { source: 'cert-manager', clusterIssuer: 'letsencrypt' } } };
+
+      target.kube.objects.set(`${ NS }/secrets/other-tls`, { metadata: { name: 'other-tls', annotations: ISSUED_BY('letsencrypt') } });
+      const { run } = await install(plan, target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'unmanagedLeft', args: { namespace: 'libredb-studio', objects: 'Secret other-tls' } }
+      });
     });
 
     it('keeps the namespace and says why when it cannot list what is left in it', async() => {

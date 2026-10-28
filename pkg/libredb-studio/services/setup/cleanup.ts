@@ -6,7 +6,7 @@ import {
 } from './names';
 import { oidcClientPath } from './oidc-client';
 import { namespaceIsEmpty, uninstallRelease, unmanagedLeft } from './release';
-import type { SetupRecord, SsoRecord } from './values';
+import type { SetupRecord, SsoRecord, TlsChoice } from './values';
 import type { WaitOptions } from './wait';
 
 /**
@@ -103,9 +103,10 @@ export function removeRelease(store: StoreLike, cluster: string, namespace: stri
 /**
  * Removes Studio's namespace, which only a namespace the wizard created may be: kept while a release
  * that could not be uninstalled may still be there, while anything else lives in it, or while a
- * Secret or ConfigMap the extension did not create is left in it, which the outcome names.
+ * Secret or ConfigMap the extension did not create is left in it, which the outcome names. `tls` is
+ * the install's TLS choice, so the Secret cert-manager issued for it does not keep the namespace.
  */
-export async function removeNamespace(store: StoreLike, cluster: string, releaseLeft: boolean): Promise<UndoEvent> {
+export async function removeNamespace(store: StoreLike, cluster: string, releaseLeft: boolean, tls: TlsChoice): Promise<UndoEvent> {
   const args = { namespace: STUDIO_NAMESPACE };
 
   if (releaseLeft) {
@@ -124,7 +125,7 @@ export async function removeNamespace(store: StoreLike, cluster: string, release
       return 'notEmpty';
     }
 
-    const left = await unmanagedLeft(store, cluster, STUDIO_NAMESPACE);
+    const left = await unmanagedLeft(store, cluster, STUDIO_NAMESPACE, tls);
 
     if (left.length) {
       return { reason: 'unmanagedLeft', args: { ...args, objects: left.join(', ') } };
@@ -143,7 +144,7 @@ export async function undoCreated(store: StoreLike, cluster: string, record: Set
     rancherCA:  () => removeRancherCA(store, cluster),
     oidcSecret: () => removeOidcSecret(store, cluster),
     oidcClient: () => removeOidcClient(store, (record.sso as SsoRecord).client),
-    namespace:  () => removeNamespace(store, cluster, undone.some((item) => item.undo === 'release' && (item.outcome === 'failed' || item.outcome === 'kept'))),
+    namespace:  () => removeNamespace(store, cluster, undone.some((item) => item.undo === 'release' && (item.outcome === 'failed' || item.outcome === 'kept')), record.tls),
   };
 
   for (const id of [...created].reverse()) {
