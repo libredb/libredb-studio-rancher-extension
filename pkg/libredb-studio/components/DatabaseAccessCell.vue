@@ -98,10 +98,10 @@ export default defineComponent({
       :disabled="opening"
       data-testid="libredb-open"
       @click="open"
-    >{{ t('libredbStudio.databases.open') }}</button>
+    >{{ t('libredbStudio.databases.open', {}, true) }}</button>
     <span
       v-else
       class="text-muted"
-    >{{ t(`libredbStudio.databases.reason.${ access }`, { secret, namespace }) }}</span>
+    >{{ t(`libredbStudio.databases.reason.${ access }`, { secret, namespace }, true) }}</span>
   </span>
 </template>

@@ -64,7 +64,7 @@ export default defineComponent({
   <div class="libredb-databases">
     <header>
       <div class="title">
-        <h1>{{ t('libredbStudio.databases.label') }}</h1>
+        <h1>{{ t('libredbStudio.databases.label', {}, true) }}</h1>
       </div>
     </header>
     <Loading v-if="!page" />
@@ -79,13 +79,13 @@ export default defineComponent({
         v-if="!page.schema"
         color="warning"
         data-testid="libredb-no-schema"
-        :label="t('libredbStudio.databases.noSchema')"
+        :label="t('libredbStudio.databases.noSchema', {}, true)"
       />
       <Banner
         v-else-if="!page.canList"
         color="warning"
         data-testid="libredb-cannot-list"
-        :label="t('libredbStudio.databases.cannotList')"
+        :label="t('libredbStudio.databases.cannotList', {}, true)"
       />
       <PaginatedResourceTable
         v-else

@@ -7,6 +7,11 @@
 # user and the password in $LAB_SECRETS/admin.password are used. The package is built when
 # dist-pkg has no build of the current version, then served on 127.0.0.1:$PKG_PORT for the run.
 #
+# With CHART_REPO_HOST set to an address of this machine that Rancher reaches (Docker's bridge
+# gateway, for a Rancher in a container), scripts/e2e/chart-repo.sh also builds the extension's
+# Helm repository, which is served there on $CHART_REPO_PORT for the spec that installs the
+# extension from the Extensions page; without it that spec is skipped.
+#
 # Usage: scripts/e2e/run.sh [extra rancher-cypress run arguments]
 set -euo pipefail
 
@@ -47,22 +52,47 @@ done
 PKG_PORT="${PKG_PORT:-4500}"
 export LIBREDB_PKG_URL="http://127.0.0.1:${PKG_PORT}"
 
+# Each server runs directly, not through yarn, so the trap below stops the server itself.
+server_pids=()
+chart_repo=""
+cleanup() {
+  for pid in "${server_pids[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  if [ -n "$chart_repo" ]; then
+    rm -rf "$chart_repo"
+  fi
+}
+trap cleanup EXIT
+
+wait_for() {
+  for _ in $(seq 1 30); do
+    if curl -fsS "$1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  curl -fsS "$1" >/dev/null
+}
+
+# The chart repository's build also builds dist-pkg, so it comes first.
+if [ -n "${CHART_REPO_HOST:-}" ]; then
+  CHART_REPO_PORT="${CHART_REPO_PORT:-4501}"
+  export LIBREDB_CHART_REPO_URL="http://${CHART_REPO_HOST}:${CHART_REPO_PORT}"
+  chart_repo="$(mktemp -d)"
+  scripts/e2e/chart-repo.sh "$chart_repo" "$LIBREDB_CHART_REPO_URL"
+  python3 -m http.server "$CHART_REPO_PORT" --bind "$CHART_REPO_HOST" --directory "$chart_repo" >/dev/null 2>&1 &
+  server_pids+=("$!")
+  wait_for "$LIBREDB_CHART_REPO_URL/index.yaml"
+fi
+
 pkg_version="$(node -p "require('./pkg/libredb-studio/package.json').version")"
 if [ ! -f "dist-pkg/libredb-studio-${pkg_version}/libredb-studio-${pkg_version}.umd.min.js" ]; then
   yarn build-pkg libredb-studio
 fi
 
-# The server runs directly under node, not through yarn, so the trap below stops the server itself.
 PORT="$PKG_PORT" node ./node_modules/@rancher/shell/scripts/serve-pkgs >/dev/null 2>&1 &
-serve_pid=$!
-trap 'kill "$serve_pid" 2>/dev/null || true' EXIT
-
-for _ in $(seq 1 30); do
-  if curl -fsS "$LIBREDB_PKG_URL/" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-curl -fsS "$LIBREDB_PKG_URL/" >/dev/null
+server_pids+=("$!")
+wait_for "$LIBREDB_PKG_URL/"
 
 yarn -s rancher-cypress run --e2e "$@"

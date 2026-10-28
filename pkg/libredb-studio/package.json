@@ -3,6 +3,7 @@
   "description": "Open the databases of a Rancher cluster in LibreDB Studio",
   "version": "0.1.0",
   "homepage": "https://github.com/libredb/libredb-studio-rancher-extension",
+  "icon": "https://raw.githubusercontent.com/libredb/libredb-studio-rancher-extension/main/pkg/libredb-studio/assets/icon.svg",
   "keywords": [
     "libredb",
     "database",
@@ -16,8 +17,7 @@
       "catalog.cattle.io/display-name": "LibreDB Studio",
       "catalog.cattle.io/rancher-version": ">= 2.15.0-0",
       "catalog.cattle.io/ui-extensions-version": ">= 3.0.0 < 4.0.0",
-      "catalog.cattle.io/kube-version": ">= 1.26.0-0",
-      "catalog.cattle.io/ui-extensions-host": "rancher-manager"
+      "catalog.cattle.io/kube-version": ">= 1.26.0-0"
     }
   },
   "scripts": {},

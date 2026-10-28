@@ -46,7 +46,9 @@ TEST_BASE_URL=https://rancher.example.sslip.io/dashboard TEST_PASSWORD=... yarn 
 
 `scripts/e2e/run.sh` builds and serves the package, then runs the specs; by default it assumes Rancher is already set up and skips the first-login specs.
 With `LAB_ENV` pointing at a local lab's environment file that exports `RANCHER_URL` and `LAB_SECRETS`, it signs in as that lab's admin.
-The `E2E` workflow runs the same specs on a fresh `rancher/rancher:v2.15-head` started on the runner, on every pull request and push to `main`; run it by hand from the Actions tab to pick another Rancher image.
+With `CHART_REPO_HOST` set to an address of this machine that Rancher reaches, it also builds the extension's Helm repository with the shell's publish script (`scripts/e2e/chart-repo.sh`, which needs helm, jq and yq 4) and serves it there, and a spec installs the extension from the Extensions page through it, as an administrator does; without it that spec is skipped.
+That spec stops when the extension is already installed from another repository, rather than uninstall it.
+The `E2E` workflow runs the same specs on a fresh `rancher/rancher:v2.15-head` started on the runner, with the Helm repository on the gateway of Docker's bridge, on every pull request and push to `main`; run it by hand from the Actions tab to pick another Rancher image.
 
 `package.json` holds `@yarnpkg/core` at 4.9.1 through `resolutions`: 4.9.2 was published with a Yarn Berry `patch:` dependency that Yarn 1 cannot resolve, and `@rancher/cypress` pulls it in through `@percy/cli`.
 Drop the entry once a later `@yarnpkg/core` installs under Yarn 1.

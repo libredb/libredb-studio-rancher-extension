@@ -19,7 +19,8 @@ const LINK = {
 
 const ROW = { metadata: { namespace: 'team-a', name: 'orders' } };
 
-const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args ? JSON.stringify(args) : '' }`;
+// Arguments show as JSON, none as nothing; whether a text was asked for raw is checked on its own
+const t = (key: string, args?: Record<string, unknown>) => `%${ key }%${ args && Object.keys(args).length ? JSON.stringify(args) : '' }`;
 
 const BannerStub = defineComponent({
   props: { color: { type: String, default: '' }, label: { type: String, default: '' } },
@@ -334,5 +335,91 @@ describe('databases page', () => {
     render(store);
     await flushPromises();
     expect(reviewState('c-1', 'team-a', 'orders-app')).toBe('allowed');
+  });
+});
+
+// The shell's t escapes HTML unless asked for raw, and both text interpolation and the Banner, which
+// escapes its label itself, would show that escape as it is: an apostrophe as &#39;. Everything these
+// render is text or a banner label, so every message is asked for raw text.
+describe('the Databases page\'s messages', () => {
+  const asRaw = () => jest.fn((key: string, _args?: unknown, _raw?: boolean) => key);
+  const escapedUnlessRaw = (_key: string, _args?: unknown, isRaw?: boolean) => (isRaw ? 'Studio\'s admin' : 'Studio&#39;s admin');
+  const notRaw = (raw: jest.Mock) => raw.mock.calls.filter((call) => call[2] !== true);
+
+  it('asks t for raw text for the title and both banners of the page', async() => {
+    const raw = asRaw();
+    const page = (schema?: Record<string, unknown>) => mount(Databases, {
+      global: {
+        mocks: {
+          t: raw, $store: { getters: { 'cluster/schemaFor': (type: string) => (type === CNPG_CLUSTER_TYPE ? schema : undefined) }, dispatch: jest.fn().mockResolvedValue([]) }, $route: { params: { cluster: 'c-1' } }
+        },
+        stubs: {
+          Banner: BannerStub, Loading: true, PaginatedResourceTable: true, RouterLink: RouterLinkStub, StudioStatus: true
+        },
+      },
+    });
+
+    page();
+    page({ id: CNPG_CLUSTER_TYPE, collectionMethods: [] });
+    await flushPromises();
+
+    expect([...new Set(raw.mock.calls.map((call) => call[0]))].sort()).toStrictEqual(['libredbStudio.databases.cannotList', 'libredbStudio.databases.label', 'libredbStudio.databases.noSchema']);
+    expect(notRaw(raw)).toStrictEqual([]);
+  });
+
+  it('asks t for raw text for every status, its link, the setup and the several-links banner', () => {
+    const raw = asRaw();
+
+    (['not-set-up', 'ready', 'not-ready', 'unknown', 'failed'] as Status[]).forEach((status) => mount(StudioStatus, {
+      props: {
+        status, link: status === 'not-set-up' ? undefined : LINK, found: 2, setupRoute: status === 'not-set-up' ? SETUP_ROUTE : undefined
+      },
+      global: { mocks: { t: raw }, stubs: { Banner: BannerStub, RouterLink: RouterLinkStub } },
+    }));
+
+    expect(raw.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining(['libredbStudio.status.open', 'libredbStudio.setup.title', 'libredbStudio.status.severalLinks']));
+    expect(notRaw(raw)).toStrictEqual([]);
+  });
+
+  it('asks t for raw text for each row\'s Open and reason', async() => {
+    const raw = asRaw();
+    const cell = (dispatch: jest.Mock, link?: typeof LINK) => mount(DatabaseAccessCell, {
+      props: {
+        row: ROW, cluster: 'c-raw', link
+      },
+      global: { mocks: { t: raw, $store: { getters: {}, dispatch } } },
+    });
+
+    clearReviews('c-raw');
+    cell(jest.fn());
+    cell(jest.fn().mockResolvedValue({ status: { allowed: true } }), LINK);
+    await flushPromises();
+    clearReviews('c-raw');
+    cell(jest.fn().mockResolvedValue({ status: { allowed: false } }), LINK);
+    await flushPromises();
+
+    expect([...new Set(raw.mock.calls.map((call) => call[0]))].sort()).toStrictEqual([
+      'libredbStudio.databases.open', 'libredbStudio.databases.reason.denied', 'libredbStudio.databases.reason.not-set-up', 'libredbStudio.databases.reason.pending',
+    ]);
+    expect(notRaw(raw)).toStrictEqual([]);
+  });
+
+  it('shows an apostrophe as an apostrophe, in the shell\'s own Banner and in the status text', async() => {
+    const page = mount(Databases, {
+      global: {
+        mocks: {
+          t: escapedUnlessRaw, $store: { getters: { 'cluster/schemaFor': () => undefined }, dispatch: jest.fn().mockResolvedValue([]) }, $route: { params: { cluster: 'c-1' } }
+        },
+        stubs: {
+          Loading: true, PaginatedResourceTable: true, RouterLink: RouterLinkStub, StudioStatus: true
+        },
+      },
+    });
+    const status = mount(StudioStatus, { props: { status: 'not-set-up' }, global: { mocks: { t: escapedUnlessRaw }, stubs: { RouterLink: RouterLinkStub } } });
+
+    await flushPromises();
+
+    expect(page.find('[data-testid="libredb-no-schema"]').text()).toBe('Studio\'s admin');
+    expect(status.find('[data-testid="libredb-studio-status"]').text()).toBe('Studio\'s admin');
   });
 });

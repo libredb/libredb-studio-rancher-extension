@@ -67,19 +67,19 @@ export default defineComponent({
     class="libredb-studio-panel"
     data-testid="libredb-panel"
   >
-    <span class="panel-title">{{ t('libredbStudio.panel.title') }}</span>
+    <span class="panel-title">{{ t('libredbStudio.panel.title', {}, true) }}</span>
     <span
       class="detail"
       data-testid="libredb-panel-host"
-    ><span class="text-label">{{ t('libredbStudio.panel.host') }}</span> {{ summary.host }}:{{ summary.port }}</span>
+    ><span class="text-label">{{ t('libredbStudio.panel.host', {}, true) }}</span> {{ summary.host }}:{{ summary.port }}</span>
     <span
       class="detail"
       data-testid="libredb-panel-database"
-    ><span class="text-label">{{ t('libredbStudio.panel.database') }}</span> {{ summary.database }}</span>
+    ><span class="text-label">{{ t('libredbStudio.panel.database', {}, true) }}</span> {{ summary.database }}</span>
     <span
       class="detail"
       data-testid="libredb-panel-user"
-    ><span class="text-label">{{ t('libredbStudio.panel.user') }}</span> {{ summary.user }}</span>
+    ><span class="text-label">{{ t('libredbStudio.panel.user', {}, true) }}</span> {{ summary.user }}</span>
     <button
       v-if="access === 'allowed'"
       type="button"
@@ -88,18 +88,18 @@ export default defineComponent({
       data-testid="libredb-panel-open"
       @click="open"
     >
-      <i class="icon icon-external-link mr-5" />{{ t('libredbStudio.databases.open') }}
+      <i class="icon icon-external-link mr-5" />{{ t('libredbStudio.databases.open', {}, true) }}
     </button>
     <span
       v-if="access === 'allowed' && openFailed"
       class="text-error"
       data-testid="libredb-panel-open-failed"
-    >{{ t('libredbStudio.databases.reason.failed', reasonArgs) }}</span>
+    >{{ t('libredbStudio.databases.reason.failed', reasonArgs, true) }}</span>
     <span
-      v-else
+      v-else-if="access !== 'allowed'"
       class="text-muted"
       :data-testid="`libredb-panel-${ access }`"
-    >{{ t(`libredbStudio.databases.reason.${ access }`, reasonArgs) }}</span>
+    >{{ t(`libredbStudio.databases.reason.${ access }`, reasonArgs, true) }}</span>
   </div>
 </template>
 

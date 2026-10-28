@@ -5,6 +5,8 @@
 //   TEST_PASSWORD   that user's password
 //   TEST_SKIP=setup the Rancher is already set up, so @rancher/cypress's first-login specs are skipped
 //   LIBREDB_PKG_URL where the built package is served
+//   LIBREDB_CHART_REPO_URL where Rancher reaches the extension's Helm repository; the spec that
+//                   installs from the Extensions page is skipped without it
 // scripts/e2e/run.sh sets all of them for the local lab.
 import baseConfig from '@rancher/cypress/base-config';
 import { extendConfig } from '@rancher/cypress/extend-config';
@@ -16,7 +18,10 @@ import { extendConfig } from '@rancher/cypress/extend-config';
 const SKIPPED_UPSTREAM_TEST = 'Confirm correct number of settings requests made';
 
 export default extendConfig({
-  env:    { libredbPkgUrl: (process.env.LIBREDB_PKG_URL || 'http://127.0.0.1:4500').replace(/\/$/, '') },
+  env: {
+    libredbPkgUrl:       (process.env.LIBREDB_PKG_URL || 'http://127.0.0.1:4500').replace(/\/$/, ''),
+    libredbChartRepoUrl: (process.env.LIBREDB_CHART_REPO_URL || '').replace(/\/$/, ''),
+  },
   expose: {
     ...baseConfig.expose,
     grepFilterSpecs: false,
