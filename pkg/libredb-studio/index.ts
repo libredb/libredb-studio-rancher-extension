@@ -1,5 +1,5 @@
 import { importTypes } from '@rancher/auto-import';
-import { ActionLocation, IPlugin } from '@shell/core/types';
+import { ActionLocation, IPlugin, PanelLocation } from '@shell/core/types';
 import routes from './routing';
 import openInStudioAction from './actions/open-in-studio';
 import { CNPG_CLUSTER_TYPE } from './config';
@@ -18,4 +18,8 @@ export default function(plugin: IPlugin): void {
 
   // F3: "Open in LibreDB Studio" in a supported database's row menu, shown only when it can open
   plugin.addAction(ActionLocation.TABLE, { resource: [CNPG_CLUSTER_TYPE] }, openInStudioAction);
+
+  // F4: Studio's panel in a supported database's title bar. A CloudNativePG Cluster has no detail
+  // view of its own, so detail-page tabs never render there and the masthead is the place.
+  plugin.addPanel(PanelLocation.DETAILS_MASTHEAD, { resource: [CNPG_CLUSTER_TYPE] }, { component: () => import(/* webpackChunkName: "studio-panel" */ './components/StudioPanel.vue') });
 }

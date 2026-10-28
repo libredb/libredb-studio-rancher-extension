@@ -1,4 +1,4 @@
-import { ActionLocation, IPlugin } from '@shell/core/types';
+import { ActionLocation, IPlugin, PanelLocation } from '@shell/core/types';
 import extension from '../index';
 import packageJson from '../package.json';
 import * as product from '../product';
@@ -55,5 +55,19 @@ describe('extension entry point', () => {
 
     expect(plugin.addAction).toHaveBeenCalledTimes(1);
     expect(plugin.addAction).toHaveBeenCalledWith(ActionLocation.TABLE, { resource: [CNPG_CLUSTER_TYPE] }, openInStudioAction);
+  });
+
+  it('should add the Studio panel to the view page of supported databases only, as its own chunk', async() => {
+    const plugin = mockPlugin();
+
+    extension(plugin);
+
+    expect(plugin.addPanel).toHaveBeenCalledTimes(1);
+
+    const [where, when, panel] = (plugin.addPanel as jest.Mock).mock.calls[0];
+
+    expect(where).toBe(PanelLocation.DETAILS_MASTHEAD);
+    expect(when).toStrictEqual({ resource: [CNPG_CLUSTER_TYPE] });
+    await expect(panel.component()).resolves.toMatchObject({ default: { name: 'StudioPanel' } });
   });
 });
