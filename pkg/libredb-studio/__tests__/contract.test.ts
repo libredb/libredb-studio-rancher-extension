@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import golden from '../../../tests/unit/fixtures/kubernetes-discovery-golden.json';
+import goldenSource from '../../../tests/unit/fixtures/kubernetes-discovery-golden.source.json';
 import { CNPG_CLUSTER_KIND, SUPPORTED_KINDS, kindFor } from '../contract/kinds';
 import { connectionId, databaseLink, studioLink, STUDIO_ID_RULE } from '../contract/connection-id';
 
@@ -97,8 +98,34 @@ describe('golden fixture', () => {
     expect(databaseLink(c.toURL, kind, c.resource)).toBe(c.link);
   });
 
-  it('is still the provisional copy, until the copy of Studio\'s fixture from a released tag replaces it', () => {
-    expect(golden.provenance).toBe('provisional');
+  // The user is left out: for a Secret the user supplied, Studio takes it from the Secret, which the
+  // extension never reads, so the panel can only show the owner the resource names.
+  it.each(golden.cases.map((c) => [`${ c.resource.metadata.namespace }/${ c.resource.metadata.name }`, c]))('%s shows the host, port and database Studio connects to', (_, c) => {
+    expect(CNPG_CLUSTER_KIND.connectionSummary(c.resource)).toMatchObject({
+      host: c.connection.host, port: c.connection.port, database: c.connection.database
+    });
+  });
+
+  it('is Studio\'s own fixture, copied from the released tag its source file names', () => {
+    expect(golden.provenance).toBe('libredb-studio');
+    expect(goldenSource).toStrictEqual({
+      repository: 'libredb/libredb-studio',
+      tag:        'libredb-studio-0.1.107',
+      path:       'tests/fixtures/kubernetes-discovery-golden.json',
+    });
+  });
+
+  it('is compared byte for byte with the file at that tag on every pull request', () => {
+    const workflow = yaml.load(fs.readFileSync(path.resolve(__dirname, '../../../.github/workflows/ci.yml'), 'utf8')) as {
+      on: Record<string, unknown>,
+      jobs: Record<string, { steps?: { run?: string }[] }>
+    };
+    const check = workflow.jobs['golden-fixture']?.steps?.map((step) => step.run).join('\n');
+
+    expect(Object.keys(workflow.on)).toContain('pull_request');
+    expect(check).toContain('tests/unit/fixtures/kubernetes-discovery-golden.source.json');
+    expect(check).toContain('https://raw.githubusercontent.com/');
+    expect(check).toMatch(/cmp .*tests\/unit\/fixtures\/kubernetes-discovery-golden\.json/);
   });
 
   it('keeps a provisional copy out of a chart release', () => {

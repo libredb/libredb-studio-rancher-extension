@@ -1,0 +1,5 @@
+{
+  "repository": "libredb/libredb-studio",
+  "tag": "libredb-studio-0.1.107",
+  "path": "tests/fixtures/kubernetes-discovery-golden.json"
+}
