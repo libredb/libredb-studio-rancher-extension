@@ -1,0 +1,42 @@
+{
+  "provenance": "provisional",
+  "note": "Computed from the connection id rule until the copy of Studio's golden fixture from a released Studio tag replaces this file.",
+  "cases": [
+    {
+      "resource": {
+        "apiVersion": "postgresql.cnpg.io/v1",
+        "kind": "Cluster",
+        "metadata": { "namespace": "team-a", "name": "orders" },
+        "spec": { "bootstrap": { "initdb": { "database": "app", "owner": "app" } } }
+      },
+      "secretName": "orders-app",
+      "connectionId": "k8s-cnpg-75c1a60b8980",
+      "toURL": "https://studio.example.com",
+      "link": "https://studio.example.com/?connection=seed%3Ak8s-cnpg-75c1a60b8980"
+    },
+    {
+      "resource": {
+        "apiVersion": "postgresql.cnpg.io/v1",
+        "kind": "Cluster",
+        "metadata": { "namespace": "team-b", "name": "analytics" },
+        "spec": {}
+      },
+      "secretName": "analytics-app",
+      "connectionId": "k8s-cnpg-d06590026498",
+      "toURL": "https://studio.example.com/",
+      "link": "https://studio.example.com/?connection=seed%3Ak8s-cnpg-d06590026498"
+    },
+    {
+      "resource": {
+        "apiVersion": "postgresql.cnpg.io/v1",
+        "kind": "Cluster",
+        "metadata": { "namespace": "prod", "name": "billing-db" },
+        "spec": { "bootstrap": { "initdb": { "database": "billing", "secret": { "name": "billing-owner" } } } }
+      },
+      "secretName": "billing-owner",
+      "connectionId": "k8s-cnpg-37c1c823437f",
+      "toURL": "https://tools.example.com/studio",
+      "link": "https://tools.example.com/studio/?connection=seed%3Ak8s-cnpg-37c1c823437f"
+    }
+  ]
+}

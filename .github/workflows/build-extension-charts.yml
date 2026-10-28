@@ -15,7 +15,26 @@ defaults:
     working-directory: ./
 
 jobs:
+  # The connection id fixture must be the copy from a released Studio tag before a chart ships.
+  golden-fixture-released:
+    if: startsWith(github.ref_name, 'libredb-studio-') && !startsWith(github.ref_name, 'libredb-studio-rancher-extension-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      - name: Refuse a provisional golden fixture
+        run: |
+          provenance="$(jq -r .provenance tests/unit/fixtures/kubernetes-discovery-golden.json)"
+          if [ "$provenance" = "provisional" ]; then
+            echo "::error::tests/unit/fixtures/kubernetes-discovery-golden.json is provisional; replace it with the copy from a released Studio tag"
+            exit 1
+          fi
+
   build-extension-charts:
+    needs: golden-fixture-released
     if: startsWith(github.ref_name, 'libredb-studio-') && !startsWith(github.ref_name, 'libredb-studio-rancher-extension-')
     uses: rancher/dashboard/.github/workflows/build-extension-charts.yml@8ded74ce753910cb3c12bbb72a6c02c5ca0ab68c # master 2026-10-27
     permissions:

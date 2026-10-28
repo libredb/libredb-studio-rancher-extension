@@ -1,6 +1,9 @@
 import { IPlugin } from '@shell/core/types';
 import extension from '../index';
 import packageJson from '../package.json';
+import * as product from '../product';
+import routes from '../routing';
+
 
 /**
  * Stands in for the dashboard's extension manager.
@@ -32,5 +35,14 @@ describe('extension entry point', () => {
     extension(plugin);
 
     expect(plugin.metadata).toStrictEqual(packageJson);
+  });
+
+  it('should add the product and its routes', () => {
+    const plugin = mockPlugin();
+
+    extension(plugin);
+
+    expect(plugin.addProduct).toHaveBeenCalledWith(product);
+    expect(plugin.addRoutes).toHaveBeenCalledWith(routes);
   });
 });
