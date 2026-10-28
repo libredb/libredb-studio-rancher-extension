@@ -1,14 +1,17 @@
-import Databases from '../pages/Databases.vue';
 import { PRODUCT_NAME, DATABASES_ROUTE } from '../config';
 
-/** The product's pages, under the cluster explorer's default layout */
+/**
+ * The product's pages, under the cluster explorer's default layout. Each page is its own chunk,
+ * loaded on the first visit, because the extension's entry loads on every Rancher page and the
+ * shell's list components a page bundles are large.
+ */
 const routes = [
   {
     parent: 'default',
     route:  {
       name:      DATABASES_ROUTE,
       path:      `/c/:cluster/${ PRODUCT_NAME }/databases`,
-      component: Databases,
+      component: () => import(/* webpackChunkName: "databases" */ '../pages/Databases.vue'),
       meta:      { product: PRODUCT_NAME },
     },
   },

@@ -4,9 +4,6 @@ import packageJson from '../package.json';
 import * as product from '../product';
 import routes from '../routing';
 
-// The shell's table pulls in the whole list stack, which the dashboard provides at run time; the
-// page's own logic is what these specs cover, and the end-to-end specs cover the real table.
-jest.mock('@shell/components/PaginatedResourceTable.vue', () => ({ __esModule: true, default: { name: 'PaginatedResourceTable', render: () => null } }));
 
 /**
  * Stands in for the dashboard's extension manager.

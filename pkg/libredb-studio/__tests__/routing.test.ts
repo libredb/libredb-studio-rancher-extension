@@ -8,14 +8,20 @@ jest.mock('@shell/components/PaginatedResourceTable.vue', () => ({ __esModule: t
 
 describe('routes', () => {
   it('adds the Databases page under the cluster explorer\'s default layout', () => {
-    expect(routes).toStrictEqual([{
-      parent: 'default',
-      route:  {
-        name:      DATABASES_ROUTE,
-        path:      '/c/:cluster/libredb/databases',
-        component: Databases,
-        meta:      { product: PRODUCT_NAME },
-      },
-    }]);
+    expect(routes).toHaveLength(1);
+    const [{ parent, route }] = routes;
+
+    expect(parent).toBe('default');
+    expect(route).toMatchObject({
+      name: DATABASES_ROUTE,
+      path: '/c/:cluster/libredb/databases',
+      meta: { product: PRODUCT_NAME },
+    });
+  });
+
+  it('loads the page as its own chunk on the first visit', async() => {
+    const [{ route }] = routes;
+
+    await expect(route.component()).resolves.toMatchObject({ default: Databases });
   });
 });
