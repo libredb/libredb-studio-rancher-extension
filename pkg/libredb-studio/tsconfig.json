@@ -32,6 +32,9 @@
       "scripthost"
     ],
     "paths": {
+      "@components/Form/LabeledInput": [
+        "types/labeled-input.d.ts"
+      ],
       "@shell/*": [
         "../../node_modules/@rancher/shell/*"
       ],

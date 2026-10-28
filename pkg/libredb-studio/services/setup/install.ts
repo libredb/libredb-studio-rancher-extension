@@ -28,6 +28,13 @@ export interface StepEvent {
   failure?: Failure;
 }
 
+/** A step as a page shows it: pending until it starts; F7's upgrade and uninstall steps too */
+export interface StepView {
+  step: string;
+  state: 'pending' | StepState;
+  failure?: Failure;
+}
+
 export interface SetupPlan {
   cluster: string;
   record: SetupRecord;

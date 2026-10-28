@@ -269,6 +269,20 @@ function namespaceCheck(namespaces: Named[]): { check: Check, exists: boolean } 
   return { check: studio.metadata.annotations?.[PROJECT_ANNOTATION] ? check('namespace', 'error', 'inProject', args) : check('namespace', 'ok', 'existing', args), exists: true };
 }
 
+/** Whether the checks allow the install: no error outside single sign-on */
+export function summarize(checks: Check[]): { canInstall: boolean } {
+  return { canInstall: !checks.some((item) => !item.sso && item.state === 'error') };
+}
+
+/** The preflight with another repository's chart check, when the cluster owner picks a mirror */
+export function withChart(preflight: PreflightResult, repo: string, found: { check: Check, chart?: ChartVersion }): PreflightResult {
+  const checks = preflight.checks.map((item) => (item.id === 'chart' ? found.check : item));
+
+  return {
+    ...preflight, ...summarize(checks), checks, repo, chart: found.chart
+  };
+}
+
 /** Everything F6 checks before it offers the install, read as the signed-in user */
 export async function runPreflight(store: StoreLike, cluster: string, repoName = DEFAULT_REPO): Promise<PreflightResult> {
   const owner = await canI(store, cluster, {
@@ -305,7 +319,7 @@ export async function runPreflight(store: StoreLike, cluster: string, repoName =
 
   return {
     checks,
-    canInstall:      !checks.some((item) => !item.sso && item.state === 'error'),
+    ...summarize(checks),
     canUseSso:       sso.canUseSso,
     serverUrl,
     serverVersion,

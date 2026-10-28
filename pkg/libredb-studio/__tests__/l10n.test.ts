@@ -42,4 +42,37 @@ describe('translations', () => {
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);
   });
+
+  it('hold every message the setup can show', () => {
+    const enUs = yaml.load(fs.readFileSync(enUsPath, 'utf8')) as Record<string, unknown>;
+    const lookup = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enUs);
+    const under = (prefix: string, names: string[]) => names.map((name) => `libredbStudio.setup.${ prefix }${ name }`);
+    const checks: Record<string, string[]> = {
+      owner:        ['ok', 'notOwner'],
+      version:      ['ok', 'old', 'unknown'],
+      cnpg:         ['ok', 'missing'],
+      aggregation:  ['ok', 'off', 'unknown'],
+      ingressClass: ['ok', 'none'],
+      storageClass: ['ok', 'none'],
+      namespace:    ['new', 'existing', 'inProject'],
+      installed:    ['ok', 'installed', 'linked', 'leftover', 'unknown'],
+      chart:        ['ok', 'noRepo', 'noChart', 'tooOld', 'unreadable'],
+      oidcProvider: ['ok', 'off', 'noServerUrl'],
+      oidcAdmin:    ['ok', 'notAdmin'],
+      oidcClient:   ['ok', 'exists', 'unknown'],
+    };
+    const keys = [
+      ...under('', ['title', 'intro', 'blocked', 'checkAgain', 'failed', 'doneSso', 'doneLocal', 'undoneTitle']),
+      ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
+      ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'localSignIn', 'repo', 'install']),
+      ...under('form.errors.', ['host', 'ingressClass', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'tooManyNamespaces', 'sso']),
+      ...under('steps.', ['namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready']),
+      ...under('state.', ['pending', 'running', 'done', 'skipped', 'failed']),
+      ...under('undo.', ['release', 'navLink', 'record', 'rancherCA', 'oidcSecret', 'oidcClient', 'namespace']),
+      ...under('outcome.', ['removed', 'gone', 'kept', 'failed']),
+      ...under('failure.', ['request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty']),
+    ];
+
+    expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);
+  });
 });
