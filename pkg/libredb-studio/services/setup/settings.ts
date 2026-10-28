@@ -8,7 +8,7 @@ import { Failure, failureOf, StepFailure } from './failure';
 import { isHostName, namespacesError } from './form';
 import { canI, findAllIfVisible, kubeGet, LOCAL_CLUSTER } from './k8s';
 import {
-  CHART_NAME, CHART_REPO, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  CHART_NAME, CHART_REPO, PROJECT_ANNOTATION, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import { copyClientSecret, createOidcClient, waitForClientId } from './oidc-client';
 import {
@@ -51,6 +51,8 @@ export interface StudioSettings {
   aggregation?: Check;
   /** The namespaces discovery may cover */
   namespaces: string[];
+  /** Studio's namespace was moved into a project, whose members can then read its Secrets */
+  inProject?: boolean;
   /** For a Studio without single sign-on: whether it can be turned on here, and with what */
   sso?: { checks: Check[], canUseSso: boolean, context: RancherContext };
 }
@@ -108,6 +110,13 @@ export async function deployedHost(store: StoreLike, cluster: string): Promise<s
   }
 }
 
+/** Whether Studio's namespace was moved into a project, whose members could then read its Secrets */
+async function namespaceInProject(store: StoreLike, cluster: string): Promise<boolean> {
+  const namespace = await kubeGet<{ metadata?: { annotations?: Record<string, string> } }>(store, cluster, `/api/v1/namespaces/${ STUDIO_NAMESPACE }`);
+
+  return !!namespace?.metadata?.annotations?.[PROJECT_ANNOTATION];
+}
+
 /** The namespaces discovery may cover, as the acting user sees them now */
 async function visibleNamespaces(store: StoreLike): Promise<string[]> {
   const namespaces = await findAllIfVisible<{ metadata: { name: string } }>(store, 'namespace');
@@ -155,6 +164,7 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
     status:      await studioStatus(store, link),
     aggregation: await aggregationCheck(store),
     namespaces:  await visibleNamespaces(store),
+    inProject:   await namespaceInProject(store, cluster),
     sso,
   };
 }
@@ -205,6 +215,10 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
 
   if (!live || !await unchangedApp(store, cluster, app)) {
     return refused('changedSinceLoad');
+  }
+
+  if (await namespaceInProject(store, cluster)) {
+    return refused('inProject', { namespace: STUDIO_NAMESPACE });
   }
 
   // Revalidated against what the user sees now, never taken on trust
@@ -294,6 +308,11 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 
   if (!live || !await unchangedApp(store, cluster, app)) {
     return refused('changedSinceLoad');
+  }
+
+  // The client secret goes into Studio's namespace, which project members must not read
+  if (await namespaceInProject(store, cluster)) {
+    return refused('inProject', { namespace: STUDIO_NAMESPACE });
   }
 
   // The redirect goes to the host Studio serves, which the administrator saw and confirmed

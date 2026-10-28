@@ -6,7 +6,7 @@ import {
   canI, findAllIfVisible, findIfVisible, kubeGet, LOCAL_CLUSTER
 } from './k8s';
 import {
-  CHART_NAME, CHART_REPO, OIDC_CLIENT_SECRETS_NAMESPACE, RECORD_CONFIGMAP, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
+  CHART_NAME, CHART_REPO, OIDC_CLIENT_SECRETS_NAMESPACE, PROJECT_ANNOTATION, RECORD_CONFIGMAP, RELEASE_NAME, STUDIO_NAMESPACE, oidcClientName
 } from './names';
 import {
   ChartVersion, MIN_APP_VERSION, MIN_CHART_VERSION, oidcScopes, pickChartVersion, rancherLine
@@ -69,7 +69,6 @@ const STORAGE_CLASS = 'storage.k8s.io.storageclass';
 const CLUSTER_ISSUER = 'cert-manager.io.clusterissuer';
 const CLUSTER_REPO = 'catalog.cattle.io.clusterrepo';
 const APP = 'catalog.cattle.io.app';
-const PROJECT_ANNOTATION = 'field.cattle.io/projectId';
 
 function check(id: CheckId, state: CheckState, reason: string, args?: Record<string, string>): Check {
   return args ? {

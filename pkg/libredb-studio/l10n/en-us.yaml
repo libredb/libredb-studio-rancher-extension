@@ -33,6 +33,7 @@ libredbStudio:
     notSetUp: LibreDB Studio is not set up in this cluster.
     otherInstall: LibreDB Studio in this cluster was not set up with this extension, so change it in Apps, Installed Apps.
     recordUnreadable: The setup record {namespace}/{name} cannot be read, so change LibreDB Studio in Apps, Installed Apps.
+    inProject: The namespace {namespace} was moved into a project, whose members can read LibreDB Studio's Secrets, the discovered database credentials among them. Move it out of the project; until then Settings changes nothing but the uninstall.
     host: Host
     unknownHost: Unknown
     chart: Chart

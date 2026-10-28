@@ -189,6 +189,12 @@ export default defineComponent({
         data-testid="libredb-settings-aggregation"
         :label="t(`libredbStudio.setup.checks.aggregation.${ settings.aggregation.reason }`)"
       />
+      <Banner
+        v-if="settings.inProject"
+        color="error"
+        data-testid="libredb-settings-in-project"
+        :label="t('libredbStudio.settings.inProject', { namespace })"
+      />
       <template v-if="kind">
         <StepList
           :steps="steps"

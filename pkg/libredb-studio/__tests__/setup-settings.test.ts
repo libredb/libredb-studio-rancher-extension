@@ -71,6 +71,10 @@ const CHANGED = {
   ok: false, failure: { reason: 'changedSinceLoad' }, undone: []
 };
 
+const IN_PROJECT = {
+  ok: false, failure: { reason: 'inProject', args: { namespace: 'libredb-studio' } }, undone: []
+};
+
 const fast = () => {
   let clock = 0;
 
@@ -228,10 +232,19 @@ describe('loading Studio\'s settings', () => {
       status:           'ready',
       aggregation:      { id: 'aggregation', state: 'ok' },
       namespaces:       ['kube-system', 'team-a', 'team-b'],
+      inProject:        false,
       sso:              { canUseSso: true, context: CONTEXT },
     });
     expect(settings.recordProblem).toBeUndefined();
     expect(settings.sso?.checks.map((check) => check.id)).toStrictEqual(['oidcProvider', 'oidcAdmin', 'oidcClient']);
+  });
+
+  it('says when Studio\'s namespace was moved into a project', async() => {
+    const { store, kube } = installed();
+
+    kube.objects.set(NS, { metadata: { name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' } } });
+
+    expect((await loadSettings(store, CLUSTER)).inProject).toBe(true);
   });
 
   it('offers nothing about single sign-on once it is on', async() => {
@@ -318,6 +331,15 @@ describe('changing the discovered namespaces', () => {
 
     expect(result.record?.host).toBe(HOST);
     expect((bodyOf(store, `POST ${ UPGRADE }`) as { charts: { values: { ingress: { hosts: { host: string }[] } } }[] }).charts[0].values.ingress.hosts[0].host).toBe(HOST);
+  });
+
+  it('refuses while Studio\'s namespace is in a project, whose members could read what Studio keeps there', async() => {
+    const { store, kube } = installed();
+
+    kube.objects.set(NS, { metadata: { name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' } } });
+
+    await expect(saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(IN_PROJECT);
+    expect(changes(store)).toStrictEqual([]);
   });
 
   it('refuses without a host it can read from Studio\'s Ingress', async() => {
@@ -495,6 +517,16 @@ describe('turning single sign-on on', () => {
 
     await expect(enableSso(upgraded.store, CLUSTER, RECORD, { ...APP_INFO, revision: 2 }, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(CHANGED);
     expect(changes(upgraded.store)).toStrictEqual([]);
+  });
+
+  it('writes no client secret into Studio\'s namespace once it is in a project', async() => {
+    const { store, kube } = installed();
+
+    kube.objects.set(NS, { metadata: { name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' } } });
+
+    await expect(enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(IN_PROJECT);
+    expect(changes(store)).toStrictEqual([]);
+    expect(kube.objects.has(SECRET_PATH)).toBe(false);
   });
 
   it('acts only on the redirect the administrator confirmed', async() => {

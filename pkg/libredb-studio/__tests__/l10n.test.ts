@@ -62,6 +62,7 @@ describe('translations', () => {
       oidcClient:   ['ok', 'exists', 'unknown'],
     };
     const keys = [
+      'libredbStudio.settings.inProject',
       ...under('', ['title', 'intro', 'blocked', 'checkAgain', 'failed', 'doneSso', 'doneLocal', 'undoneTitle']),
       ...Object.entries(checks).flatMap(([id, reasons]) => under(`checks.${ id }.`, reasons)),
       ...under('form.', ['host', 'hostHelp', 'ingressClass', 'tlsTitle', 'tls.secret', 'tls.cert-manager', 'tlsSecretName', 'clusterIssuer', 'namespaces', 'namespacesHelp', 'sso', 'redirect', 'localSignIn', 'install']),

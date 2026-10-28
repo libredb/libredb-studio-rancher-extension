@@ -3,7 +3,9 @@ import type { StoreLike } from '../types';
 import { undoCreated, UndoEvent, UndoId } from './cleanup';
 import { Failure, StepFailure } from './failure';
 import { kube, kubeGet } from './k8s';
-import { MANAGED_LABELS, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, STUDIO_NAMESPACE } from './names';
+import {
+  MANAGED_LABELS, PROJECT_ANNOTATION, RANCHER_CA_CONFIGMAP, RANCHER_CA_KEY, STUDIO_NAMESPACE
+} from './names';
 import { copyClientSecret, createOidcClient, waitForClientId } from './oidc-client';
 import { createConfigMap, createRecord } from './record';
 import { installRelease, waitForRelease, waitForStudio } from './release';
@@ -47,8 +49,6 @@ export interface InstallResult {
   undone: UndoEvent[];
   link?: StudioLink;
 }
-
-const PROJECT_ANNOTATION = 'field.cattle.io/projectId';
 
 export function plannedSteps({ record }: SetupPlan): StepId[] {
   return [

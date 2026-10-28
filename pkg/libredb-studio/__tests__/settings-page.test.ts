@@ -130,6 +130,13 @@ describe('settings page', () => {
     expect(text(wrapper, 'libredb-settings-summary')).toContain('%libredbStudio.settings.ssoOff%');
     expect(text(wrapper, 'libredb-studio-status')).toContain('%libredbStudio.status.ready%');
     expect(has(wrapper, 'libredb-settings-aggregation')).toBe(false);
+    expect(has(wrapper, 'libredb-settings-in-project')).toBe(false);
+  });
+
+  it('warns that project members can read Studio\'s Secrets once its namespace is in a project', async() => {
+    const wrapper = await loaded({ ...SETTINGS, inProject: true });
+
+    expect(text(wrapper, 'libredb-settings-in-project')).toBe('%libredbStudio.settings.inProject%{"namespace":"libredb-studio"}');
   });
 
   it('asks t for raw text wherever it renders a message as text', async() => {

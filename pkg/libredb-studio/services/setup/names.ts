@@ -5,6 +5,9 @@
 
 /** Studio's namespace, outside every project, so project members cannot read its Secrets */
 export const STUDIO_NAMESPACE = 'libredb-studio';
+
+/** The annotation that puts a namespace into a Rancher project */
+export const PROJECT_ANNOTATION = 'field.cattle.io/projectId';
 export const RELEASE_NAME = 'libredb-studio';
 export const CHART_NAME = 'libredb-studio';
 
