@@ -13,12 +13,16 @@ import { floatingVueOptions } from '@shell/plugins/floating-vue';
 import cleanHtmlDirective from '@shell/directives/clean-html';
 import cleanTooltipDirective from '@shell/directives/clean-tooltip';
 import htmlStrippedAriaLabelDirective from '@shell/directives/strip-html-aria-label';
+import fetchMixin from '@shell/mixins/fetch.client.js';
 import '@shell/plugins/replaceall';
 
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
 config.global.components['v-select'] = vSelect;
+// The dashboard applies this mixin to every component, so its data (`state`, `fetchState`, ...)
+// shadows a component's computed of the same name; mount with it, as the dashboard does.
+config.global.mixins = [fetchMixin];
 config.global.plugins = [[FloatingVue, floatingVueOptions]];
 
 config.global.directives = {

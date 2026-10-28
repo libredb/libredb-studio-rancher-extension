@@ -42,7 +42,8 @@ export default defineComponent({
       return CNPG_CLUSTER_KIND.credentialSecretName(this.row);
     },
 
-    state(): string {
+    // Not `state`: the dashboard's global fetch mixin owns that name as data, which wins.
+    access(): string {
       if (!this.link) {
         return 'not-set-up';
       }
@@ -90,10 +91,10 @@ export default defineComponent({
 <template>
   <span
     class="database-access"
-    :data-testid="`libredb-access-${ state }`"
+    :data-testid="`libredb-access-${ access }`"
   >
     <button
-      v-if="state === 'allowed'"
+      v-if="access === 'allowed'"
       type="button"
       class="btn btn-sm role-primary"
       :disabled="opening"
@@ -103,6 +104,6 @@ export default defineComponent({
     <span
       v-else
       class="text-muted"
-    >{{ t(`libredbStudio.databases.reason.${ state }`, { secret, namespace }) }}</span>
+    >{{ t(`libredbStudio.databases.reason.${ access }`, { secret, namespace }) }}</span>
   </span>
 </template>
