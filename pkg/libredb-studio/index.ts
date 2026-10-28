@@ -20,6 +20,7 @@ export default function(plugin: IPlugin): void {
   plugin.addAction(ActionLocation.TABLE, { resource: [CNPG_CLUSTER_TYPE] }, openInStudioAction);
 
   // F4: Studio's panel in a supported database's title bar. A CloudNativePG Cluster has no detail
-  // view of its own, so detail-page tabs never render there and the masthead is the place.
-  plugin.addPanel(PanelLocation.DETAILS_MASTHEAD, { resource: [CNPG_CLUSTER_TYPE] }, { component: () => import(/* webpackChunkName: "studio-panel" */ './components/StudioPanel.vue') });
+  // view of its own, so detail-page tabs never render there and the masthead is the place. The
+  // masthead also renders on the create, clone and edit pages, so the panel is bound to the view page.
+  plugin.addPanel(PanelLocation.DETAILS_MASTHEAD, { resource: [CNPG_CLUSTER_TYPE], mode: ['detail'] }, { component: () => import(/* webpackChunkName: "studio-panel" */ './components/StudioPanel.vue') });
 }

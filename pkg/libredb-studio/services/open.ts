@@ -10,7 +10,11 @@ import type { StoreLike } from './types';
  * background; opening always reads the NavLink and reviews access again first.
  */
 
-/** How long a NavLink or a review answer is used before it is read again: Studio's review cache in Rancher mode */
+/**
+ * How old a NavLink or a review answer may be before the next evaluation that reads it starts a new
+ * read: Studio's review cache in Rancher mode. Time alone does not trigger that evaluation, because
+ * the clock is not reactive; opening always checks again, so a stale answer never opens anything.
+ */
 export const REFRESH_MS = 15000;
 
 export type OpenAccess = 'not-set-up' | ReviewState;
@@ -64,11 +68,14 @@ export function resourceCluster(resource: ShellResource): string {
   return resource.$rootGetters.clusterId as string;
 }
 
-/** What opening a resource needs, or nothing for a kind the contract does not support */
+/**
+ * What opening a resource needs, or nothing for a kind the contract does not support or a resource
+ * with no name yet (one on its create page), whose connection does not exist.
+ */
 export function targetOf(resource: ShellResource): OpenTarget | undefined {
   const kind = kindFor(resource.type);
 
-  return kind ? {
+  return kind && resource.metadata?.name ? {
     store: resourceStore(resource), cluster: resourceCluster(resource), kind, resource
   } : undefined;
 }
@@ -90,8 +97,9 @@ export function loadStudioLink(store: StoreLike, cluster: string): Promise<Studi
 }
 
 /**
- * The cluster's Studio link as last read; undefined until the first read answers. A missing or
- * stale answer starts one read in the background and keeps the old answer until it lands.
+ * The cluster's Studio link as last read; undefined until the first read answers. A missing answer,
+ * or one older than REFRESH_MS when this is next called, starts one read in the background and keeps
+ * the old answer until it lands.
  */
 export function cachedStudioLink(store: StoreLike, cluster: string): StudioLink | undefined {
   const entry = links[cluster];

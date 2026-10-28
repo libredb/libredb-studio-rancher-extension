@@ -67,7 +67,7 @@ describe('extension entry point', () => {
     const [where, when, panel] = (plugin.addPanel as jest.Mock).mock.calls[0];
 
     expect(where).toBe(PanelLocation.DETAILS_MASTHEAD);
-    expect(when).toStrictEqual({ resource: [CNPG_CLUSTER_TYPE] });
+    expect(when).toStrictEqual({ resource: [CNPG_CLUSTER_TYPE], mode: ['detail'] });
     await expect(panel.component()).resolves.toMatchObject({ default: { name: 'StudioPanel' } });
   });
 });

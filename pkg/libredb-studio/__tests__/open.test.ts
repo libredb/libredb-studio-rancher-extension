@@ -66,6 +66,14 @@ describe('open service: the shell resource', () => {
     expect(targetOf(resource())).toMatchObject({ cluster: 'c-target', kind: CNPG_CLUSTER_KIND });
     expect(targetOf({ ...resource(), type: 'apps.deployment' })).toBeUndefined();
   });
+
+  it('targets nothing for a resource with no name yet, such as one on its create page', () => {
+    const { resource } = setup({ cluster: 'c-target-new' });
+
+    expect(targetOf(resource('team-a', ''))).toBeUndefined();
+    expect(targetOf({ ...resource(), metadata: { namespace: 'team-a' } as never })).toBeUndefined();
+    expect(canOpen(resource('team-a', ''))).toBe(false);
+  });
 });
 
 describe('open service: the NavLink cache', () => {

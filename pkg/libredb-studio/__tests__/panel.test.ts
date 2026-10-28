@@ -3,6 +3,7 @@ import StudioPanel from '../components/StudioPanel.vue';
 import { CNPG_CLUSTER_TYPE } from '../config';
 import { connectionId } from '../contract/connection-id';
 import { clearReviews } from '../services/access';
+import * as openService from '../services/open';
 import type { ShellResource } from '../services/open';
 
 const NAVLINK = { metadata: { name: 'studio.libredb-studio' }, spec: { toURL: 'https://studio.example.com' } };
@@ -60,6 +61,15 @@ describe('LibreDB Studio masthead panel', () => {
   it('renders nothing for a kind the contract does not support', async() => {
     const { dispatch, resource } = setup('c-pan-2', { allowed: true, navlinks: [NAVLINK] });
     const wrapper = render({ ...resource, type: 'apps.deployment' });
+
+    await settle();
+    expect(wrapper.find('[data-testid="libredb-panel"]').exists()).toBe(false);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('renders nothing and asks nothing for a resource with no name yet', async() => {
+    const { dispatch, resource } = setup('c-pan-new', { allowed: true, navlinks: [NAVLINK] });
+    const wrapper = render({ ...resource, metadata: { namespace: 'team-a' } as never });
 
     await settle();
     expect(wrapper.find('[data-testid="libredb-panel"]').exists()).toBe(false);
@@ -131,5 +141,21 @@ describe('LibreDB Studio masthead panel', () => {
 
     expect(open).not.toHaveBeenCalled();
     expect(wrapper.find('[data-testid="libredb-panel-denied"]').exists()).toBe(true);
+  });
+
+  it('says opening failed and enables Open again when the open itself fails', async() => {
+    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const answers = { allowed: true as Answer, navlinks: [NAVLINK] as unknown[] };
+    const { resource } = setup('c-pan-7', answers);
+    const wrapper = render(resource);
+
+    await settle();
+    jest.spyOn(openService, 'openDatabase').mockRejectedValueOnce(new Error('Loading chunk studio-link failed'));
+    await wrapper.find('[data-testid="libredb-panel-open"]').trigger('click');
+    await flushPromises();
+
+    expect(open).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="libredb-panel-open"]').attributes('disabled')).toBeUndefined();
+    expect(wrapper.find('[data-testid="libredb-panel-open-failed"]').text()).toBe('%libredbStudio.databases.reason.failed%{"secret":"orders-app","namespace":"team-a"}');
   });
 });
