@@ -685,7 +685,7 @@ describe('uninstalling Studio', () => {
     expect(lines(store)).not.toContain(`DELETE ${ NAVLINK }`);
   });
 
-  it('touches no OIDC object of a Studio that never had single sign-on, and keeps a namespace it did not create', async() => {
+  it('reports no single sign-on object a Studio never had, and keeps a namespace it did not create', async() => {
     const record = { ...RECORD, createdNamespace: false };
     const { store } = installed({ record });
     const result = await uninstallStudio(store, CLUSTER, record, 'libredb-studio', options());
@@ -698,7 +698,41 @@ describe('uninstalling Studio', () => {
         undo: 'namespace', outcome: 'kept', failure: { reason: 'notOurs', args: { namespace: 'libredb-studio' } }
       },
     ]);
-    expect(lines(store).filter((line) => line.includes(LOCAL))).toStrictEqual([]);
+    expect(lines(store).filter((line) => line.startsWith('DELETE') && line.includes(LOCAL))).toStrictEqual([]);
+  });
+
+  it('removes the single sign-on objects it finds, also when the record no longer names them', async() => {
+    const { store, kube } = installed({ record: SSO_RECORD });
+
+    // Someone who can edit ConfigMaps in Studio's namespace dropped single sign-on from the record
+    kube.objects.set(RECORD_PATH, { metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '8' }, data: { 'setup.json': serializeRecord(RECORD) } });
+
+    const result = await uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options());
+
+    expect(result).toStrictEqual({
+      ok:     true,
+      undone: [
+        { undo: 'release', outcome: 'removed' },
+        { undo: 'navLink', outcome: 'gone' },
+        { undo: 'rancherCA', outcome: 'removed' },
+        { undo: 'oidcSecret', outcome: 'removed' },
+        { undo: 'oidcClient', outcome: 'removed' },
+        { undo: 'record', outcome: 'removed' },
+        { undo: 'namespace', outcome: 'removed' },
+      ],
+    });
+    expect([CLIENT, SECRET_PATH, CA_PATH].filter((path) => kube.objects.has(path))).toStrictEqual([]);
+  });
+
+  it('names the OIDC client as possibly left behind for a cluster owner, when the record does not name one', async() => {
+    const { store } = installed({ override: [[SSAR_LOCAL, reviewAnswer(false)]] });
+    const result = await uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options());
+
+    expect(result.ok).toBe(true);
+    expect(result.undone).toContainEqual({
+      undo: 'oidcClient', outcome: 'unchecked', failure: { reason: 'mayBeLeft', args: { name: 'libredb-studio-c-m-1' } }
+    });
+    expect(lines(store).filter((line) => line.includes(LOCAL) && !line.endsWith('selfsubjectaccessreviews'))).toStrictEqual([]);
   });
 
   it('reads no Secret\'s data, only the labels of what it deletes', async() => {

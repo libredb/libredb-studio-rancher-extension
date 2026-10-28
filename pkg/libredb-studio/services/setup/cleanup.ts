@@ -16,8 +16,11 @@ import type { WaitOptions } from './wait';
  * uninstall. Each removal says what became of the object, and one failure never stops the rest.
  */
 export type UndoId = 'release' | 'upgrade' | 'navLink' | 'record' | 'rancherCA' | 'oidcSecret' | 'oidcClient' | 'namespace';
-/** restored: an upgrade taken back to the values Studio had */
-export type UndoOutcome = 'removed' | 'gone' | 'kept' | 'restored' | 'failed';
+/**
+ * restored: an upgrade taken back to the values Studio had; unchecked: something that may be there,
+ * which the user may neither read nor remove
+ */
+export type UndoOutcome = 'removed' | 'gone' | 'kept' | 'restored' | 'failed' | 'unchecked';
 
 export interface UndoEvent {
   undo: UndoId;

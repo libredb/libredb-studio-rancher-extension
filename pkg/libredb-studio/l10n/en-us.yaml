@@ -174,6 +174,7 @@ libredbStudio:
       kept: kept
       restored: put back
       failed: could not be removed
+      unchecked: not checked
     failure:
       request: 'Rancher answered the request with an error: {detail}'
       inProject: The namespace {namespace} was moved into a project.
@@ -198,5 +199,6 @@ libredbStudio:
       notConfirmed: Type the release name to confirm.
       badNamespaces: The namespaces to discover must be at least one and at most 256 namespaces you can see in this cluster now.
       changedSinceLoad: LibreDB Studio or its setup record changed since this page loaded. Check the settings again before you change them.
+      mayBeLeft: An OIDC client {name} is left behind if single sign-on was ever turned on here. Checking for it and deleting it need a Rancher administrator or the global role Manage OIDC Clients.
 product:
   libredb: LibreDB Studio

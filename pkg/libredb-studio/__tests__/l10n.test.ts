@@ -69,11 +69,11 @@ describe('translations', () => {
       ...under('steps.', ['namespace', 'oidcClient', 'oidcSecret', 'rancherCA', 'record', 'install', 'ready', 'upgrade', 'saveRecord']),
       ...under('state.', ['pending', 'running', 'done', 'skipped', 'failed']),
       ...under('undo.', ['release', 'upgrade', 'navLink', 'record', 'rancherCA', 'oidcSecret', 'oidcClient', 'namespace']),
-      ...under('outcome.', ['removed', 'gone', 'kept', 'restored', 'failed']),
+      ...under('outcome.', ['removed', 'gone', 'kept', 'restored', 'failed', 'unchecked']),
       ...under('failure.', [
         'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
         'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
-        'changedSinceLoad',
+        'changedSinceLoad', 'mayBeLeft',
       ]),
       ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
         'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle',

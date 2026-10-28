@@ -384,9 +384,11 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 
 /**
  * Uninstalls Studio (design section 6.4, Uninstall) after the release name was typed by hand. When
- * the app cannot be uninstalled nothing else is touched; the OIDC client goes only for someone
- * allowed to delete it, and is otherwise named as left behind; the record and the namespace go last,
- * and only when everything before them went, so Settings can finish a later try.
+ * the app cannot be uninstalled nothing else is touched. Single sign-on's objects are looked for
+ * whatever the record says, since whoever can edit the record could drop them from it; the OIDC
+ * client goes only for someone allowed to delete it, and is otherwise named as left behind; the
+ * record and the namespace go last, and only when everything before them went, so Settings can
+ * finish a later try.
  */
 export async function uninstallStudio(store: StoreLike, cluster: string, record: SetupRecord, confirm: string, options: ChangeOptions = {}): Promise<ChangeResult> {
   const problem = recordProblem(record, cluster);
@@ -419,19 +421,28 @@ export async function uninstallStudio(store: StoreLike, cluster: string, record:
 
   note(await removeNavLink(store, cluster, `${ record.release.namespace }.${ record.release.name }`));
 
-  if (record.sso) {
-    if (record.sso.rancherCA) {
-      note(await removeRancherCA(store, cluster));
+  // An object the record does not name is reported only when it was there
+  const { sso } = record;
+  const noteFound = (event: UndoEvent, named: boolean) => {
+    if (named || event.outcome !== 'gone') {
+      note(event);
     }
-    note(await removeOidcSecret(store, cluster));
+  };
 
-    const client = record.sso.client;
-    const mayDelete = await canI(store, LOCAL_CLUSTER, {
-      group: 'management.cattle.io', resource: 'oidcclients', verb: 'delete', name: client
-    });
+  noteFound(await removeRancherCA(store, cluster), !!sso?.rancherCA);
+  noteFound(await removeOidcSecret(store, cluster), !!sso);
 
-    note(mayDelete ? await removeOidcClient(store, client) : {
-      undo: 'oidcClient', outcome: 'kept', failure: { reason: 'notAllowed', args: { name: client } }
+  const client = oidcClientName(cluster);
+  const mayDelete = await canI(store, LOCAL_CLUSTER, {
+    group: 'management.cattle.io', resource: 'oidcclients', verb: 'delete', name: client
+  });
+
+  if (mayDelete) {
+    noteFound(await removeOidcClient(store, client), !!sso);
+  } else {
+    // Left to an administrator: kept when the record says single sign-on is on, otherwise possibly there
+    note(sso ? { undo: 'oidcClient', outcome: 'kept', failure: { reason: 'notAllowed', args: { name: client } } } : {
+      undo: 'oidcClient', outcome: 'unchecked', failure: { reason: 'mayBeLeft', args: { name: client } }
     });
   }
 
