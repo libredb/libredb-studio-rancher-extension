@@ -206,7 +206,12 @@ describe('settings page', () => {
       }
     };
     const warned = await bannersOf({
-      ...SETTINGS, inProject: true, app: { ...SETTINGS.app!, managed: false }, aggregation: { id: 'aggregation', state: 'warning', reason: 'off' }
+      ...SETTINGS,
+      inProject:   true,
+      app:         { ...SETTINGS.app!, managed: false },
+      aggregation: {
+        id: 'aggregation', state: 'warning', reason: 'off'
+      }
     });
     const ssoOn = await bannersOf({
       ...SETTINGS, record: ssoRecord, sso: undefined, ssoAdmin: true
