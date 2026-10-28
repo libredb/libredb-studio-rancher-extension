@@ -5,7 +5,7 @@ import {
   OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, STUDIO_NAMESPACE, isManaged
 } from './names';
 import { oidcClientPath } from './oidc-client';
-import { namespaceIsEmpty, uninstallRelease } from './release';
+import { namespaceIsEmpty, uninstallRelease, unmanagedLeft } from './release';
 import type { SetupRecord, SsoRecord } from './values';
 import type { WaitOptions } from './wait';
 
@@ -32,8 +32,8 @@ function event(undo: UndoId, outcome: UndoOutcome, failure?: Failure): UndoEvent
   } : { undo, outcome };
 }
 
-/** notEmpty: a namespace something else still lives in */
-type Removal = 'removed' | 'gone' | 'notManaged' | 'notEmpty';
+/** notEmpty: a namespace something else still lives in; a Failure: kept for the reason it names */
+type Removal = 'removed' | 'gone' | 'notManaged' | 'notEmpty' | Failure;
 
 const KEPT: Record<string, Failure> = {
   notManaged: { reason: 'notManaged' },
@@ -43,6 +43,10 @@ const KEPT: Record<string, Failure> = {
 async function removal(undo: UndoId, remove: () => Promise<Removal>, secret = false): Promise<UndoEvent> {
   try {
     const result = await remove();
+
+    if (typeof result === 'object') {
+      return event(undo, 'kept', result);
+    }
 
     return KEPT[result] ? event(undo, 'kept', KEPT[result]) : event(undo, result as UndoOutcome);
   } catch (err) {
@@ -98,7 +102,8 @@ export function removeRelease(store: StoreLike, cluster: string, namespace: stri
 
 /**
  * Removes Studio's namespace, which only a namespace the wizard created may be: kept while a release
- * that could not be uninstalled may still be there, or while anything else lives in it.
+ * that could not be uninstalled may still be there, while anything else lives in it, or while a
+ * Secret or ConfigMap the extension did not create is left in it, which the outcome names.
  */
 export async function removeNamespace(store: StoreLike, cluster: string, releaseLeft: boolean): Promise<UndoEvent> {
   const args = { namespace: STUDIO_NAMESPACE };
@@ -117,6 +122,12 @@ export async function removeNamespace(store: StoreLike, cluster: string, release
 
     if (!await namespaceIsEmpty(store, cluster, STUDIO_NAMESPACE)) {
       return 'notEmpty';
+    }
+
+    const left = await unmanagedLeft(store, cluster, STUDIO_NAMESPACE);
+
+    if (left.length) {
+      return { reason: 'unmanagedLeft', args: { ...args, objects: left.join(', ') } };
     }
 
     return await kubeDelete(store, cluster, path) ? 'removed' : 'gone';

@@ -2,7 +2,7 @@ import { CNPG_CLUSTER_TYPE } from '../../config';
 import { StudioLink, usableToURL } from '../navlink';
 import type { StoreLike } from '../types';
 import { StepFailure } from './failure';
-import { kube, kubeGet, kubePatch } from './k8s';
+import { kube, kubeGet, kubeMetadataList, kubePatch } from './k8s';
 import {
   CHART_NAME, CHART_REPO, MANAGED_LABELS, RELEASE_NAME, STUDIO_NAMESPACE, isManaged
 } from './names';
@@ -311,4 +311,29 @@ export async function namespaceIsEmpty(store: StoreLike, cluster: string, namesp
   } catch {
     return false;
   }
+}
+
+/** What Kubernetes itself puts in every namespace, which goes with the namespace */
+const KUBE_ROOT_CA = 'kube-root-ca.crt';
+const SERVICE_ACCOUNT_ANNOTATION = 'kubernetes.io/service-account.name';
+
+/**
+ * The Secrets and ConfigMaps left in a namespace that do not carry the extension's labels, such as a
+ * TLS Secret its owner created, each as `<Kind> <name>`. Deleting the namespace would delete them, so
+ * while any is left it stays. Both lists are read as metadata alone, so no Secret's data reaches the
+ * browser. Ignored: what is being deleted, a service account's token Secret, and the CA ConfigMap
+ * Kubernetes writes into every namespace. A list that fails throws.
+ */
+export async function unmanagedLeft(store: StoreLike, cluster: string, namespace: string): Promise<string[]> {
+  const inNamespace = (kind: string) => `/api/v1/namespaces/${ namespace }/${ kind }`;
+  const [secrets, configMaps] = await Promise.all([
+    kubeMetadataList(store, cluster, inNamespace('secrets')),
+    kubeMetadataList(store, cluster, inNamespace('configmaps')),
+  ]);
+  const left = (item: { metadata?: { labels?: Record<string, string>, deletionTimestamp?: string } }) => !item.metadata?.deletionTimestamp && !isManaged(item.metadata?.labels);
+
+  return [
+    ...secrets.filter((item) => left(item) && !item.metadata?.annotations?.[SERVICE_ACCOUNT_ANNOTATION]).map((item) => `Secret ${ item.metadata?.name }`),
+    ...configMaps.filter((item) => left(item) && item.metadata?.name !== KUBE_ROOT_CA).map((item) => `ConfigMap ${ item.metadata?.name }`),
+  ];
 }

@@ -1,6 +1,7 @@
 import { fakeStore, httpError } from './helpers/fake-store';
 import {
-  canI, findAllIfVisible, findIfVisible, k8sPath, kube, kubeDelete, kubeGet, kubeMetadata, kubePatch, LOCAL_CLUSTER, MERGE_PATCH, METADATA_ONLY
+  canI, findAllIfVisible, findIfVisible, k8sPath, kube, kubeDelete, kubeGet, kubeMetadata, kubeMetadataList, kubePatch, LOCAL_CLUSTER, MERGE_PATCH,
+  METADATA_LIST_ONLY, METADATA_ONLY
 } from '../services/setup/k8s';
 
 describe('kubernetes requests through Rancher', () => {
@@ -46,6 +47,23 @@ describe('kubernetes requests through Rancher', () => {
       url, method: 'get', data: undefined, redirectUnauthorized: false, headers: { accept: METADATA_ONLY }
     });
     expect(store.calls[0].headers).toStrictEqual({ accept: METADATA_ONLY });
+  });
+
+  it('lists a collection\'s metadata alone, so listing Secrets never brings their data', async() => {
+    const url = '/k8s/clusters/c/api/v1/namespaces/libredb-studio/secrets';
+    const listed = { kind: 'PartialObjectMetadataList', items: [{ metadata: { name: 'here' } }] };
+    const store = fakeStore({ requests: [[`GET ${ url }`, listed]] });
+
+    expect(METADATA_LIST_ONLY).toBe('application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1');
+    await expect(kubeMetadataList(store, 'c', '/api/v1/namespaces/libredb-studio/secrets')).resolves.toStrictEqual([{ metadata: { name: 'here' } }]);
+    expect(store.calls[0].headers).toStrictEqual({ accept: METADATA_LIST_ONLY });
+  });
+
+  it('lists nothing when the API server answers no items, and throws when the list fails', async() => {
+    const store = fakeStore({ requests: [['GET /k8s/clusters/c/api/v1/namespaces/a/configmaps', {}], ['GET /k8s/clusters/c/api/v1/namespaces/b/configmaps', httpError(403)]] });
+
+    await expect(kubeMetadataList(store, 'c', '/api/v1/namespaces/a/configmaps')).resolves.toStrictEqual([]);
+    await expect(kubeMetadataList(store, 'c', '/api/v1/namespaces/b/configmaps')).rejects.toMatchObject({ _status: 403 });
   });
 
   it('changes part of an object with a JSON merge patch, which carries only what changes', async() => {

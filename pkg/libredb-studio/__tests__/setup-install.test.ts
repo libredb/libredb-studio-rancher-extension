@@ -1,5 +1,6 @@
 import { fakeStore, httpError, FakeStoreSetup, Request } from './helpers/fake-store';
 import { FakeKube, KUBE_REQUESTS, secretDataReads } from './helpers/kube';
+import { METADATA_LIST_ONLY } from '../services/setup/k8s';
 import { CLUSTER, RANCHER_CA } from './helpers/cluster';
 import {
   installStudio, plannedSteps, SetupPlan, StepEvent, UndoEvent
@@ -546,6 +547,55 @@ describe('installing Studio', () => {
       expect(run.undone).toContainEqual({
         undo: 'namespace', outcome: 'kept', failure: { reason: 'notEmpty', args: { namespace: 'libredb-studio' } }
       });
+    });
+
+    it('keeps the namespace while a Secret or ConfigMap the setup did not create is left in it, and names each', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+      target.kube.objects.set(`${ NS }/configmaps/team-notes`, { metadata: { name: 'team-notes', labels: { 'app.kubernetes.io/part-of': 'libredb-studio' } } });
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'unmanagedLeft', args: { namespace: 'libredb-studio', objects: 'Secret libredb-studio-tls, ConfigMap team-notes' } }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }/secrets/libredb-studio-tls`);
+    });
+
+    it('lists the Secrets and ConfigMaps by their metadata alone, so no Secret data reaches the browser', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+      await install(localPlan(), target);
+      const lists = target.store.calls.filter((call) => call.method === 'GET' && (call.url === `${ NS }/secrets` || call.url === `${ NS }/configmaps`));
+
+      expect(lists.map((call) => call.url)).toStrictEqual([`${ NS }/secrets`, `${ NS }/configmaps`]);
+      expect(lists.map((call) => call.headers)).toStrictEqual([{ accept: METADATA_LIST_ONLY }, { accept: METADATA_LIST_ONLY }]);
+      expect(JSON.stringify(target.store.dispatch.mock.results)).not.toContain('bm90LWEtcmVhbC1rZXk=');
+      expect(secretDataReads(target.store.calls)).toStrictEqual([]);
+    });
+
+    it('removes the namespace past what Kubernetes puts in every namespace, what the setup labelled and what is being deleted', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+
+      target.kube.objects.set(`${ NS }/configmaps/kube-root-ca.crt`, { metadata: { name: 'kube-root-ca.crt' } });
+      target.kube.objects.set(`${ NS }/secrets/default-token-abcde`, { metadata: { name: 'default-token-abcde', annotations: { 'kubernetes.io/service-account.name': 'default' } } });
+      target.kube.objects.set(`${ NS }/configmaps/libredb-studio-left`, { metadata: { name: 'libredb-studio-left', labels: MANAGED } });
+      target.kube.objects.set(`${ NS }/secrets/going`, { metadata: { name: 'going', deletionTimestamp: '2026-10-28T10:00:00Z' } });
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
+    });
+
+    it('keeps the namespace and says why when it cannot list what is left in it', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)], [`GET ${ NS }/configmaps`, httpError(403, 'configmaps is forbidden')]]);
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'failed', failure: { reason: 'request', args: { detail: 'HTTP 403: configmaps is forbidden' } }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
     });
 
     it('never removes a namespace it did not create', async() => {

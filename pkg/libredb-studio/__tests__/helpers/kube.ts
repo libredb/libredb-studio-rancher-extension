@@ -1,8 +1,8 @@
-import { METADATA_ONLY } from '../../services/setup/k8s';
+import { METADATA_LIST_ONLY, METADATA_ONLY } from '../../services/setup/k8s';
 import { httpError, Request } from './fake-store';
 
 type KubeObject = {
-  metadata?: { name?: string, labels?: Record<string, string>, annotations?: Record<string, string>, resourceVersion?: string, generation?: number },
+  metadata?: { name?: string, labels?: Record<string, string>, annotations?: Record<string, string>, resourceVersion?: string, generation?: number, deletionTimestamp?: string },
   [key: string]: unknown
 };
 
@@ -36,7 +36,8 @@ function mergePatch(target: unknown, patch: unknown): unknown {
 /**
  * Kubernetes objects by URL, as the API server answers them: a POST to a collection creates the
  * object named in its body (409 when it exists), GET, PUT, PATCH and DELETE act on one object (404
- * when it does not exist). A GET that asks for metadata alone gets only the object's metadata. A PUT
+ * when it does not exist). A GET that asks for metadata alone gets only the object's metadata, and
+ * a GET of a collection that asks for its metadata alone lists the metadata of the objects in it. A PUT
  * or a merge patch that names a resourceVersion other than the stored one is refused with 409, and
  * a patch that touches the spec raises the object's generation, as it does for a Deployment. Use
  * `handle` as the last answer of a fake store, behind the specific ones.
@@ -70,6 +71,16 @@ export class FakeKube {
       this.reactions[created]?.(stored, this);
 
       return stored;
+    }
+
+    if (method === 'GET' && request.headers?.accept === METADATA_LIST_ONLY) {
+      const items = [...this.objects.entries()]
+        .filter(([key]) => key.startsWith(`${ url }/`) && !key.slice(url.length + 1).includes('/'))
+        .map(([, object]) => ({ metadata: object.metadata }));
+
+      return {
+        apiVersion: 'meta.k8s.io/v1', kind: 'PartialObjectMetadataList', items
+      };
     }
 
     const found = this.objects.get(url);

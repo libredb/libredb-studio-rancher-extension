@@ -61,7 +61,7 @@ libredbStudio:
     confirm: Confirm
     cancel: Cancel
     uninstallTitle: Uninstall
-    uninstallWarning: Uninstalling removes the LibreDB Studio app and its data volume, which the chart does not keep, the Secrets and ConfigMaps the setup created, and the namespace {namespace} when the setup created it and nothing else lives there. The OIDC client is deleted only for a Rancher administrator.
+    uninstallWarning: Uninstalling removes the LibreDB Studio app and its data volume, which the chart does not keep, the Secrets and ConfigMaps the setup created, and the namespace {namespace} when the setup created it and nothing else lives there. A Secret or ConfigMap the setup did not create, such as a TLS Secret you added, keeps the namespace, and the result names each one left. The OIDC client is deleted only for a Rancher administrator.
     typeName: Type {name} to confirm
     uninstall: Uninstall
     uninstalledTitle: What became of each part
@@ -214,6 +214,7 @@ libredbStudio:
       notReady: LibreDB Studio or its link did not become ready in time.
       releaseLeft: Kept because the app could not be removed.
       notEmpty: Kept because something else lives in it.
+      unmanagedLeft: 'Kept because it still holds what the setup did not create: {objects}. Deleting the namespace would delete them too; a cluster owner can remove them and the namespace by hand.'
       notManaged: Kept because it does not carry this extension's labels, so the extension did not create it or someone changed it; a cluster owner can remove it by hand.
       notOurs: Kept because the setup did not create it.
       notAllowed: Kept because deleting the OIDC client {name} needs a Rancher administrator or the global role Manage OIDC Clients; it is left behind for them.

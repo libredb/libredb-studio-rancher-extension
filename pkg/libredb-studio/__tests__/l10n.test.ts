@@ -79,7 +79,7 @@ describe('translations', () => {
         'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
         'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
         'changedSinceLoad', 'mayBeLeft', 'notAcknowledged', 'notRegenerated', 'notRestarted', 'clientMissing', 'clientNotManaged', 'objectNotManaged', 'ssoNeedsAdmin',
-        'ssoNotOn', 'notConfirmedClient', 'secretKeyMissing', 'regenerateUnknown',
+        'ssoNotOn', 'notConfirmedClient', 'secretKeyMissing', 'regenerateUnknown', 'unmanagedLeft',
       ]),
       ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
         'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'ssoOnIntro', 'ssoAdminOnly', 'rotateTitle', 'rotateIntro', 'rotate', 'rotateWarning',

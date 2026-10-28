@@ -45,6 +45,20 @@ export function kubeMetadata(store: StoreLike, cluster: string, path: string): P
   return kubeGet<ObjectMetadata>(store, cluster, path, { accept: METADATA_ONLY });
 }
 
+/** The Accept header that asks the API server to list a collection's metadata alone */
+export const METADATA_LIST_ONLY = 'application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1';
+
+export interface ListedMetadata {
+  metadata?: { name?: string, labels?: Record<string, string>, annotations?: Record<string, string>, deletionTimestamp?: string };
+}
+
+/** The metadata alone of every object in a collection, so a list of Secrets never brings their data; a failure throws */
+export async function kubeMetadataList(store: StoreLike, cluster: string, path: string): Promise<ListedMetadata[]> {
+  const listed = await kube<{ items?: ListedMetadata[] } | undefined>(store, cluster, 'get', path, undefined, { accept: METADATA_LIST_ONLY });
+
+  return listed?.items || [];
+}
+
 /** The content type of a JSON merge patch, which names only what changes */
 export const MERGE_PATCH = 'application/merge-patch+json';
 
