@@ -197,5 +197,6 @@ libredbStudio:
       ssoUnavailable: Single sign-on is not available here.
       notConfirmed: Type the release name to confirm.
       badNamespaces: The namespaces to discover must be at least one and at most 256 namespaces you can see in this cluster now.
+      changedSinceLoad: LibreDB Studio or its setup record changed since this page loaded. Check the settings again before you change them.
 product:
   libredb: LibreDB Studio

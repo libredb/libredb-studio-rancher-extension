@@ -53,6 +53,24 @@ const CONFIRMED = { host: HOST, namespaces: ['team-a'] };
 
 type Answers = [string | RegExp, unknown][];
 
+/** Answers one after another, then the last one for good */
+const sequence = (...answers: unknown[]) => {
+  let next = 0;
+
+  return () => answers[Math.min(next++, answers.length - 1)];
+};
+
+/** The app at a revision in a Helm state, with the extension's mark */
+const managedApp = (version: number, status: string) => ({
+  spec: {
+    version, info: { status }, chart: { metadata: { version: '0.1.111', appVersion: '1.2.1', annotations: MANAGED } }
+  }
+});
+
+const CHANGED = {
+  ok: false, failure: { reason: 'changedSinceLoad' }, undone: []
+};
+
 const fast = () => {
   let clock = 0;
 
@@ -67,6 +85,8 @@ interface Installed {
   /** The chart annotations of the release, the extension's mark by default */
   annotations?: Record<string, string>;
   ingressHost?: string;
+  /** The chart metadata of the release, the deployed chart with `annotations` by default */
+  chart?: Record<string, unknown>;
 }
 
 /**
@@ -75,7 +95,7 @@ interface Installed {
  * the app and the chart's NavLink go away.
  */
 function installed({
-  record = RECORD, override = [], upgradeStates = ['deployed'], annotations = MANAGED, ingressHost = HOST
+  record = RECORD, override = [], upgradeStates = ['deployed'], annotations = MANAGED, ingressHost = HOST, chart
 }: Installed = {}) {
   const setup = readyCluster();
   const holder = {} as { store: ReturnType<typeof fakeStore>, kube: FakeKube };
@@ -93,7 +113,7 @@ function installed({
         version: 3 + upgrades,
         info:    { status },
         chart:   {
-          metadata: {
+          metadata: chart || {
             version: '0.1.111', appVersion: '1.2.1', annotations
           }
         }
@@ -104,7 +124,7 @@ function installed({
 
   holder.kube = new FakeKube({
     [NS]:          labelled('libredb-studio'),
-    [RECORD_PATH]: labelled('libredb-studio-setup', { data: { 'setup.json': serializeRecord(record) } }),
+    [RECORD_PATH]: { metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '7' }, data: { 'setup.json': serializeRecord(record) } },
     [INGRESS]:     { metadata: { name: 'libredb-studio' }, spec: { rules: [{ host: ingressHost }] } },
     ...(record.sso ? {
       [CA_PATH]: labelled('libredb-studio-rancher-ca'), [SECRET_PATH]: labelled('libredb-studio-oidc'), [CLIENT]: labelled('libredb-studio-c-m-1', { status: { clientID: 'client-abc' } })
@@ -284,7 +304,7 @@ describe('changing the discovered namespaces', () => {
       }]
     });
     expect(kube.objects.get(RECORD_PATH)).toStrictEqual({
-      apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'libredb-studio-setup', labels: MANAGED }, data: { 'setup.json': serializeRecord(changed) }
+      apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '7' }, data: { 'setup.json': serializeRecord(changed) }
     });
     expect(run.events.filter((event) => (event as { state: string }).state !== 'running')).toStrictEqual([
       { step: 'upgrade', state: 'done' }, { step: 'saveRecord', state: 'done' }
@@ -336,12 +356,85 @@ describe('changing the discovered namespaces', () => {
     });
   });
 
-  it('upgrades at the version the record names when the app does not say', async() => {
-    const { store } = installed();
+  it('upgrades at the chart version deployed now, or the one the record names when the app does not say', async() => {
+    const deployed = installed();
 
-    await saveNamespaces(store, CLUSTER, RECORD, { revision: 3 }, ['team-b'], options());
+    await saveNamespaces(deployed.store, CLUSTER, RECORD, { revision: 3 }, ['team-b'], options());
+    expect(bodyOf(deployed.store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ version: '0.1.111' }] });
 
-    expect(bodyOf(store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ version: '0.1.110' }] });
+    const unsaid = installed({ chart: { annotations: MANAGED } });
+
+    await saveNamespaces(unsaid.store, CLUSTER, RECORD, { revision: 3 }, ['team-b'], options());
+    expect(bodyOf(unsaid.store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ version: '0.1.110' }] });
+  });
+
+  it('acts on nothing older than the page showed: a record or an app that changed since is refused', async() => {
+    // A tab loaded before an administrator turned single sign-on on
+    const sso = installed({ record: SSO_RECORD });
+
+    await expect(saveNamespaces(sso.store, CLUSTER, RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(sso.store)).toStrictEqual([]);
+
+    // An upgrade someone made after the page read revision 2
+    const upgraded = installed();
+
+    await expect(saveNamespaces(upgraded.store, CLUSTER, RECORD, { ...APP_INFO, revision: 2 }, ['team-b'], options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(upgraded.store)).toStrictEqual([]);
+
+    const noRecord = installed({ override: [[`GET ${ RECORD_PATH }`, httpError(404)]] });
+
+    await expect(saveNamespaces(noRecord.store, CLUSTER, RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(CHANGED);
+
+    const noApp = installed({ override: [[`GET ${ APP }`, httpError(404)]] });
+
+    await expect(saveNamespaces(noApp.store, CLUSTER, RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(noApp.store)).toStrictEqual([]);
+  });
+
+  it('waits for the revision its own upgrade makes, never one someone else made just before it', async() => {
+    const { store } = installed({
+      override: [[`GET ${ APP }`, sequence(managedApp(3, 'deployed'), managedApp(4, 'deployed'), managedApp(4, 'deployed'), managedApp(5, 'failed'))]]
+    });
+    const result = await saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-b'], options());
+
+    expect(result).toStrictEqual({
+      ok: false, failedStep: 'upgrade', failure: { reason: 'helmFailed' }, undone: []
+    });
+    expect(lines(store)).not.toContain(`PUT ${ RECORD_PATH }`);
+  });
+
+  it('refuses the upgrade when the app is gone by the time it starts', async() => {
+    const { store } = installed({ override: [[`GET ${ APP }`, sequence(managedApp(3, 'deployed'), httpError(404))]] });
+
+    await expect(saveNamespaces(store, CLUSTER, RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'upgrade', failure: { reason: 'changedSinceLoad' }, undone: []
+    });
+    expect(lines(store)).not.toContain(`POST ${ UPGRADE }`);
+  });
+
+  it('writes the record only over the version it read, so a record written meanwhile stands', async() => {
+    const holder: { kube?: FakeKube } = {};
+    const meanwhile = {
+      metadata: { name: 'libredb-studio-setup', labels: MANAGED, resourceVersion: '8' }, data: { 'setup.json': serializeRecord(SSO_RECORD) }
+    };
+    const target = installed({
+      override: [[`POST ${ UPGRADE }`, () => {
+        // Someone else writes the record while the upgrade runs
+        holder.kube?.objects.set(RECORD_PATH, meanwhile);
+
+        return { operationName: 'helm-operation-9', operationNamespace: 'cattle-system' };
+      }]]
+    });
+
+    holder.kube = target.kube;
+
+    const result = await saveNamespaces(target.store, CLUSTER, RECORD, APP_INFO, ['team-b'], options());
+
+    expect(bodyOf(target.store, `PUT ${ RECORD_PATH }`)).toMatchObject({ metadata: { resourceVersion: '7' } });
+    expect(result).toMatchObject({
+      ok: false, failedStep: 'saveRecord', failure: { reason: 'request', args: { detail: 'HTTP 409: the object has been modified' } }
+    });
+    expect(target.kube.objects.get(RECORD_PATH)).toBe(meanwhile);
   });
 });
 
@@ -389,6 +482,19 @@ describe('turning single sign-on on', () => {
       ok: false, failure: { reason: 'badNamespaces' }, undone: []
     });
     expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('acts on nothing older than the page showed', async() => {
+    // Another administrator turned single sign-on on after this page loaded
+    const sso = installed({ record: SSO_RECORD });
+
+    await expect(enableSso(sso.store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(sso.store)).toStrictEqual([]);
+
+    const upgraded = installed();
+
+    await expect(enableSso(upgraded.store, CLUSTER, RECORD, { ...APP_INFO, revision: 2 }, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(upgraded.store)).toStrictEqual([]);
   });
 
   it('acts only on the redirect the administrator confirmed', async() => {
@@ -500,6 +606,13 @@ describe('uninstalling Studio', () => {
       ok: false, failure: { reason: 'notConfirmed' }, undone: []
     });
     expect(store.calls).toStrictEqual([]);
+  });
+
+  it('acts on nothing older than the page showed', async() => {
+    const { store } = installed({ record: SSO_RECORD });
+
+    await expect(uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options())).resolves.toStrictEqual(CHANGED);
+    expect(changes(store)).toStrictEqual([]);
   });
 
   it('removes everything the wizard created, the OIDC client too, for a Rancher administrator', async() => {

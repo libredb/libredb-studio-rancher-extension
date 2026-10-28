@@ -1,7 +1,9 @@
 import {
   compareVersions, parseVersion, rancherLine, oidcScopes, pickChartVersion, MIN_CHART_VERSION, MIN_APP_VERSION
 } from '../services/setup/versions';
-import { chartValues, parseRecord, serializeRecord, SetupRecord } from '../services/setup/values';
+import {
+  chartValues, parseRecord, sameRecord, serializeRecord, SetupRecord
+} from '../services/setup/values';
 import {
   STUDIO_NAMESPACE, RELEASE_NAME, CHART_NAME, OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, CHART_REPO, chartRepo, oidcClientName
 } from '../services/setup/names';
@@ -238,6 +240,17 @@ describe('setup record', () => {
     delete local.sso;
     expect(parseRecord(serializeRecord(record))).toStrictEqual(record);
     expect(parseRecord(serializeRecord(local))).toStrictEqual(local);
+  });
+
+  it('tells a record that says the same from one that says something else, whatever the order of its keys', () => {
+    const reversed = (value: unknown): unknown => (value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reversed(item)])) : value);
+
+    expect(sameRecord(record, reversed(record) as SetupRecord)).toBe(true);
+    expect(sameRecord(record, { ...record, sso: { ...record.sso!, rancherCA: true } })).toBe(false);
+    expect(sameRecord(record, { ...record, namespaces: ['team-a', 'team-b'] })).toBe(false);
+    expect(sameRecord(record, { ...record, namespaces: [] })).toBe(false);
+    expect(sameRecord({ ...record, sso: undefined }, { ...record, sso: undefined })).toBe(true);
+    expect(sameRecord({ ...record, sso: undefined }, record)).toBe(false);
   });
 
   it('refuses a record it cannot trust to rebuild the values from', () => {

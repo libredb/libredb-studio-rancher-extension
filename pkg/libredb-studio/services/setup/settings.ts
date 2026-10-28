@@ -4,7 +4,7 @@ import type { StoreLike } from '../types';
 import {
   removeNamespace, removeNavLink, removeOidcClient, removeOidcSecret, removeRancherCA, removeRecord, removeRelease, undoCreated, UndoEvent, UndoId
 } from './cleanup';
-import { Failure, failureOf } from './failure';
+import { Failure, failureOf, StepFailure } from './failure';
 import { isHostName, namespacesError } from './form';
 import { canI, findAllIfVisible, kubeGet, LOCAL_CLUSTER } from './k8s';
 import {
@@ -15,9 +15,9 @@ import {
   aggregationCheck, rancherContext, ssoChecks, Check, RancherContext
 } from './preflight';
 import { createConfigMap, readRecord, replaceRecord } from './record';
-import { releaseState, upgradeRelease, waitForRelease, Operation } from './release';
+import { releaseState, upgradeRelease, waitForRelease } from './release';
 import { runSteps, StepEvent } from './steps';
-import type { SetupRecord, SsoRecord } from './values';
+import { sameRecord, SetupRecord, SsoRecord } from './values';
 import type { WaitOptions } from './wait';
 
 /**
@@ -159,11 +159,38 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
   };
 }
 
-/** Upgrades Studio to the changed record, at the app's chart version, and waits for it */
-async function upgradeTo(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, options: WaitOptions): Promise<void> {
-  const operation: Operation = await upgradeRelease(store, cluster, record, app.chartVersion || record.release.chartVersion);
+/**
+ * The version of the record when it is still the one the page showed, or nothing when it changed or
+ * went since: a change acts only on what the person saw, never over what someone did after.
+ */
+async function unchangedRecord(store: StoreLike, cluster: string, shown: SetupRecord): Promise<{ resourceVersion?: string } | undefined> {
+  const live = await readRecord(store, cluster);
 
-  await waitForRelease(store, cluster, record, operation, app.revision, options);
+  return live.record && sameRecord(live.record, shown) ? { resourceVersion: live.resourceVersion } : undefined;
+}
+
+/** Whether the app is still at the revision the page showed */
+async function unchangedApp(store: StoreLike, cluster: string, app: AppInfo): Promise<boolean> {
+  const state = await releaseState(store, cluster, STUDIO_NAMESPACE, RELEASE_NAME);
+
+  return state?.revision === app.revision;
+}
+
+/**
+ * Upgrades Studio to the changed record at the chart version deployed now, and waits for the
+ * revision this upgrade makes: the revision is read right before the upgrade starts, so one someone
+ * else made earlier never counts as this one.
+ */
+async function upgradeTo(store: StoreLike, cluster: string, record: SetupRecord, options: WaitOptions): Promise<void> {
+  const before = await releaseState(store, cluster, STUDIO_NAMESPACE, RELEASE_NAME);
+
+  if (!before) {
+    throw new StepFailure('changedSinceLoad');
+  }
+
+  const operation = await upgradeRelease(store, cluster, record, before.chartVersion || record.release.chartVersion);
+
+  await waitForRelease(store, cluster, record, operation, before.revision, options);
 }
 
 /** Changes the namespaces Studio discovers */
@@ -172,6 +199,12 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
 
   if (problem) {
     return refused('untrustedRecord', { field: problem });
+  }
+
+  const live = await unchangedRecord(store, cluster, record);
+
+  if (!live || !await unchangedApp(store, cluster, app)) {
+    return refused('changedSinceLoad');
   }
 
   // Revalidated against what the user sees now, never taken on trust
@@ -190,12 +223,12 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
   };
   const failed = await runSteps<ChangeStepId>(['upgrade', 'saveRecord'], {
     upgrade: async() => {
-      await upgradeTo(store, cluster, changed, app, options);
+      await upgradeTo(store, cluster, changed, options);
 
       return 'done';
     },
     saveRecord: async() => {
-      await replaceRecord(store, cluster, changed);
+      await replaceRecord(store, cluster, changed, live.resourceVersion);
 
       return 'done';
     },
@@ -212,7 +245,7 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
  * Puts Studio back on the record it had after an upgrade to single sign-on failed, then removes what
  * the attempt created; while Studio may still run on the new values, those are kept instead.
  */
-async function compensate(store: StoreLike, cluster: string, record: SetupRecord, changed: SetupRecord, app: AppInfo, created: UndoId[], options: ChangeOptions): Promise<UndoEvent[]> {
+async function compensate(store: StoreLike, cluster: string, record: SetupRecord, changed: SetupRecord, created: UndoId[], options: ChangeOptions): Promise<UndoEvent[]> {
   const undone: UndoEvent[] = [];
   const note = (event: UndoEvent) => {
     undone.push(event);
@@ -220,9 +253,7 @@ async function compensate(store: StoreLike, cluster: string, record: SetupRecord
   };
 
   try {
-    const now = await releaseState(store, cluster, record.release.namespace, record.release.name);
-
-    await upgradeTo(store, cluster, record, { ...app, revision: now?.revision ?? app.revision }, options);
+    await upgradeTo(store, cluster, record, options);
     note({ undo: 'upgrade', outcome: 'restored' });
   } catch (err) {
     note({
@@ -257,6 +288,12 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
 
   if (!context.serverUrl) {
     return refused('ssoUnavailable');
+  }
+
+  const live = await unchangedRecord(store, cluster, record);
+
+  if (!live || !await unchangedApp(store, cluster, app)) {
+    return refused('changedSinceLoad');
   }
 
   // The redirect goes to the host Studio serves, which the administrator saw and confirmed
@@ -316,12 +353,12 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
     },
     upgrade: async() => {
       upgradeStarted = true;
-      await upgradeTo(store, cluster, changed, app, options);
+      await upgradeTo(store, cluster, changed, options);
 
       return 'done';
     },
     saveRecord: async() => {
-      await replaceRecord(store, cluster, changed);
+      await replaceRecord(store, cluster, changed, live.resourceVersion);
 
       return 'done';
     },
@@ -337,7 +374,7 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
   let undone: UndoEvent[] = [];
 
   if (failed.step !== 'saveRecord') {
-    undone = upgradeStarted ? await compensate(store, cluster, previous, changed, app, created, options) : await undoCreated(store, cluster, changed, created, options);
+    undone = upgradeStarted ? await compensate(store, cluster, previous, changed, created, options) : await undoCreated(store, cluster, changed, created, options);
   }
 
   return {
@@ -360,6 +397,10 @@ export async function uninstallStudio(store: StoreLike, cluster: string, record:
 
   if (confirm.trim() !== record.release.name) {
     return refused('notConfirmed');
+  }
+
+  if (!await unchangedRecord(store, cluster, record)) {
+    return refused('changedSinceLoad');
   }
 
   const undone: UndoEvent[] = [];
