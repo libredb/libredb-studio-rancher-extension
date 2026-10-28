@@ -27,6 +27,15 @@ yarn serve-pkgs                 # serves dist-pkg on http://127.0.0.1:4500 for D
 
 To try a build in a Rancher, turn on Extension developer features in your user preferences, open Extensions, choose Developer Load and enter the URL that `yarn serve-pkgs` prints.
 
+The setup wizard installs and upgrades the LibreDB Studio chart from Rancher's Partners repository only, never from a repository a setup record names.
+A development or lab build may name another ClusterRepo at build time, for a chart that Partners does not carry yet:
+
+```bash
+VUE_APP_LIBREDB_DEV_REPO=my-lab-charts yarn build-pkg libredb-studio
+```
+
+No workflow of this repository sets it, which a unit test checks, so the published builds name none.
+
 ### End-to-end tests
 
 The Cypress specs under `cypress/` run on [`@rancher/cypress`](https://www.npmjs.com/package/@rancher/cypress) against a real Rancher:
