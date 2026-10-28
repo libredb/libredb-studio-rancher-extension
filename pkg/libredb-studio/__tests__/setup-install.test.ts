@@ -1,5 +1,6 @@
 import { fakeStore, httpError, FakeStoreSetup, Request } from './helpers/fake-store';
 import { FakeKube, KUBE_REQUESTS, secretDataReads } from './helpers/kube';
+import { METADATA_LIST_ONLY } from '../services/setup/k8s';
 import { CLUSTER, RANCHER_CA } from './helpers/cluster';
 import {
   installStudio, plannedSteps, SetupPlan, StepEvent, UndoEvent
@@ -49,6 +50,11 @@ const ssoPlan = (record: SetupRecord = RECORD): SetupPlan => ({
   cluster: CLUSTER, record, cacerts: RANCHER_CA, ownersTrusted: true
 });
 const localPlan = (): SetupPlan => ({ cluster: CLUSTER, record: LOCAL_RECORD });
+
+/** The annotations cert-manager puts on a Secret it issued from a ClusterIssuer */
+const ISSUED_BY = (issuer: string) => ({
+  'cert-manager.io/issuer-name': issuer, 'cert-manager.io/issuer-kind': 'ClusterIssuer', 'cert-manager.io/issuer-group': 'cert-manager.io'
+});
 
 /** Answers one after another, then the last one for good */
 const sequence = (...answers: unknown[]) => {
@@ -546,6 +552,96 @@ describe('installing Studio', () => {
       expect(run.undone).toContainEqual({
         undo: 'namespace', outcome: 'kept', failure: { reason: 'notEmpty', args: { namespace: 'libredb-studio' } }
       });
+    });
+
+    it('keeps the namespace while a Secret or ConfigMap the setup did not create is left in it, and names each', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+      target.kube.objects.set(`${ NS }/configmaps/team-notes`, { metadata: { name: 'team-notes', labels: { 'app.kubernetes.io/part-of': 'libredb-studio' } } });
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'unmanagedLeft', args: { namespace: 'libredb-studio', objects: 'Secret libredb-studio-tls, ConfigMap team-notes' } }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }/secrets/libredb-studio-tls`);
+    });
+
+    it('lists the Secrets and ConfigMaps by their metadata alone, so no Secret data reaches the browser', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+      await install(localPlan(), target);
+      const lists = target.store.calls.filter((call) => call.method === 'GET' && (call.url === `${ NS }/secrets` || call.url === `${ NS }/configmaps`));
+
+      expect(lists.map((call) => call.url)).toStrictEqual([`${ NS }/secrets`, `${ NS }/configmaps`]);
+      expect(lists.map((call) => call.headers)).toStrictEqual([{ accept: METADATA_LIST_ONLY }, { accept: METADATA_LIST_ONLY }]);
+      expect(JSON.stringify(target.store.dispatch.mock.results)).not.toContain('bm90LWEtcmVhbC1rZXk=');
+      expect(secretDataReads(target.store.calls)).toStrictEqual([]);
+    });
+
+    it('removes the namespace past what Kubernetes puts in every namespace, what the setup labelled and what is being deleted', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+
+      target.kube.objects.set(`${ NS }/configmaps/kube-root-ca.crt`, { metadata: { name: 'kube-root-ca.crt' } });
+      target.kube.objects.set(`${ NS }/secrets/default-token-abcde`, { metadata: { name: 'default-token-abcde', annotations: { 'kubernetes.io/service-account.name': 'default' } } });
+      target.kube.objects.set(`${ NS }/configmaps/libredb-studio-left`, { metadata: { name: 'libredb-studio-left', labels: MANAGED } });
+      target.kube.objects.set(`${ NS }/secrets/going`, { metadata: { name: 'going', deletionTimestamp: '2026-10-28T10:00:00Z' } });
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
+    });
+
+    it('removes the namespace past the TLS Secret cert-manager issued from the chosen issuer, which cert-manager leaves behind', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+      const plan: SetupPlan = { cluster: CLUSTER, record: { ...LOCAL_RECORD, tls: { source: 'cert-manager', clusterIssuer: 'letsencrypt' } } };
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls', annotations: ISSUED_BY('letsencrypt') } });
+      const { run } = await install(plan, target);
+
+      expect(run.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
+    });
+
+    it.each([
+      ['carries no issuer annotations', 'cert-manager', undefined],
+      ['names another issuer', 'cert-manager', ISSUED_BY('other')],
+      ['names an Issuer, not a ClusterIssuer', 'cert-manager', { ...ISSUED_BY('letsencrypt'), 'cert-manager.io/issuer-kind': 'Issuer' }],
+      ['was issued but the install chose a Secret of its own', 'secret', ISSUED_BY('letsencrypt')],
+    ])('keeps the namespace while a libredb-studio-tls Secret that %s is left', async(_, source, annotations) => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+      const tls: SetupRecord['tls'] = source === 'cert-manager' ? { source: 'cert-manager', clusterIssuer: 'letsencrypt' } : { source: 'secret', secretName: 'libredb-studio-tls' };
+      const plan: SetupPlan = { cluster: CLUSTER, record: { ...LOCAL_RECORD, tls } };
+
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls', annotations } });
+      const { run } = await install(plan, target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'unmanagedLeft', args: { namespace: 'libredb-studio', objects: 'Secret libredb-studio-tls' } }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
+    });
+
+    it('keeps the namespace while another Secret issued from the chosen issuer is left', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
+      const plan: SetupPlan = { cluster: CLUSTER, record: { ...LOCAL_RECORD, tls: { source: 'cert-manager', clusterIssuer: 'letsencrypt' } } };
+
+      target.kube.objects.set(`${ NS }/secrets/other-tls`, { metadata: { name: 'other-tls', annotations: ISSUED_BY('letsencrypt') } });
+      const { run } = await install(plan, target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'kept', failure: { reason: 'unmanagedLeft', args: { namespace: 'libredb-studio', objects: 'Secret other-tls' } }
+      });
+    });
+
+    it('keeps the namespace and says why when it cannot list what is left in it', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(500)], [`GET ${ NS }/configmaps`, httpError(403, 'configmaps is forbidden')]]);
+      const { run } = await install(localPlan(), target);
+
+      expect(run.undone).toContainEqual({
+        undo: 'namespace', outcome: 'failed', failure: { reason: 'request', args: { detail: 'HTTP 403: configmaps is forbidden' } }
+      });
+      expect(lines(target.store)).not.toContain(`DELETE ${ NS }`);
     });
 
     it('never removes a namespace it did not create', async() => {

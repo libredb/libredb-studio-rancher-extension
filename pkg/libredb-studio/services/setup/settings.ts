@@ -769,7 +769,7 @@ export async function uninstallStudio(store: StoreLike, cluster: string, record:
     });
   } else {
     note(await removeRecord(store, cluster));
-    note(record.createdNamespace ? await removeNamespace(store, cluster, false) : {
+    note(record.createdNamespace ? await removeNamespace(store, cluster, false, record.tls) : {
       undo: 'namespace', outcome: 'kept', failure: { reason: 'notOurs', args }
     });
   }

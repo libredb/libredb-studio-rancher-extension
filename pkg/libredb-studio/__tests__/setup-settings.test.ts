@@ -1595,6 +1595,30 @@ describe('uninstalling Studio', () => {
     expect(lines(store)).not.toContain(`DELETE ${ NS }`);
   });
 
+  it('keeps the namespace, naming it, while the TLS Secret the owner created is left there', async() => {
+    const { store, kube } = installed();
+
+    kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+    const result = await uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options());
+
+    expect(result.undone).toContainEqual({
+      undo: 'namespace', outcome: 'kept', failure: { reason: 'unmanagedLeft', args: { namespace: 'libredb-studio', objects: 'Secret libredb-studio-tls' } }
+    });
+    expect(lines(store)).not.toContain(`DELETE ${ NS }`);
+    expect(secretDataReads(store.calls)).toStrictEqual([]);
+  });
+
+  it('removes the namespace past the TLS Secret cert-manager issued for a cert-manager install', async() => {
+    const record: SetupRecord = { ...RECORD, tls: { source: 'cert-manager', clusterIssuer: 'letsencrypt' } };
+    const { store, kube } = installed({ record });
+
+    kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls', annotations: { 'cert-manager.io/issuer-name': 'letsencrypt', 'cert-manager.io/issuer-kind': 'ClusterIssuer' } } });
+    const result = await uninstallStudio(store, CLUSTER, record, 'libredb-studio', options());
+
+    expect(result.undone).toContainEqual({ undo: 'namespace', outcome: 'removed' });
+    expect(lines(store)).toContain(`DELETE ${ NS }`);
+  });
+
   it('finishes the job when an earlier uninstall left only the record', async() => {
     const { store } = installed({ override: [[`GET ${ APP }`, httpError(404)], [`GET ${ NAVLINK }`, httpError(404)]] });
     const result = await uninstallStudio(store, CLUSTER, RECORD, 'libredb-studio', options());
