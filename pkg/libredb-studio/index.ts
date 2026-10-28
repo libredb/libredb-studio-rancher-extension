@@ -2,7 +2,7 @@ import { importTypes } from '@rancher/auto-import';
 import { ActionLocation, IPlugin, PanelLocation } from '@shell/core/types';
 import routes from './routing';
 import openInStudioAction from './actions/open-in-studio';
-import { CNPG_CLUSTER_TYPE } from './config';
+import { CNPG_CLUSTER_TYPE, PRODUCT_NAME } from './config';
 import { GATE_STORE, gateStore } from './product';
 
 /** The part of the dashboard's Vuex store that an extension's store module is added to */
@@ -25,8 +25,11 @@ export default function(plugin: IPlugin): void {
   plugin.addProduct(require('./product'));
   plugin.addRoutes(routes);
 
-  // F3: "Open in LibreDB Studio" in a supported database's row menu, shown only when it can open
+  // F3: "Open in LibreDB Studio" in a supported database's row menu, shown only when it can open: on
+  // Rancher's list of the kind, and on the product's own Databases page, whose route names no
+  // resource for the shell to match the first binding against
   plugin.addAction(ActionLocation.TABLE, { resource: [CNPG_CLUSTER_TYPE] }, openInStudioAction);
+  plugin.addAction(ActionLocation.TABLE, { product: [PRODUCT_NAME] }, openInStudioAction);
 
   // F4: Studio's panel in a supported database's title bar. A CloudNativePG Cluster has no detail
   // view of its own, so detail-page tabs never render there and the masthead is the place. The

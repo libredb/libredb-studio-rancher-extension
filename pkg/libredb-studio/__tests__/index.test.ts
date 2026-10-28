@@ -4,7 +4,7 @@ import packageJson from '../package.json';
 import * as product from '../product';
 import routes from '../routing';
 import openInStudioAction from '../actions/open-in-studio';
-import { CNPG_CLUSTER_TYPE } from '../config';
+import { CNPG_CLUSTER_TYPE, PRODUCT_NAME } from '../config';
 
 
 /**
@@ -66,13 +66,15 @@ describe('extension entry point', () => {
     expect(store.unregisterModule).toHaveBeenCalledWith(product.GATE_STORE);
   });
 
-  it('should add the open action to the row menu of supported databases only', () => {
+  it('should add the open action to the row menu of supported databases, and of the product\'s own pages', () => {
     const plugin = mockPlugin();
 
     extension(plugin);
 
-    expect(plugin.addAction).toHaveBeenCalledTimes(1);
-    expect(plugin.addAction).toHaveBeenCalledWith(ActionLocation.TABLE, { resource: [CNPG_CLUSTER_TYPE] }, openInStudioAction);
+    expect((plugin.addAction as jest.Mock).mock.calls).toStrictEqual([
+      [ActionLocation.TABLE, { resource: [CNPG_CLUSTER_TYPE] }, openInStudioAction],
+      [ActionLocation.TABLE, { product: [PRODUCT_NAME] }, openInStudioAction],
+    ]);
   });
 
   it('should add the Studio panel to the view page of supported databases only, as its own chunk', async() => {
