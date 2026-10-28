@@ -14,7 +14,8 @@ With a Rancher administrator, it also registers LibreDB Studio as an OIDC client
 The Settings page changes the namespaces LibreDB Studio discovers, turns single sign-on on, and uninstalls LibreDB Studio after the release name is typed by hand.
 
 It has no backend of its own: it works through Rancher's API as the signed-in user, never reads a database's Secret, and opens LibreDB Studio, installed in the same cluster, in a new tab.
-The only Secret it reads is the OIDC client secret Rancher generates, once, for an administrator who sets up single sign-on, and it writes that secret straight into LibreDB Studio's own Secret without showing it.
+The only Secret value it reads is the OIDC client secret Rancher generates, once, for an administrator who sets up single sign-on, and it writes that secret straight into LibreDB Studio's own Secret without showing it.
+When it removes that Secret again, on an uninstall or after a failed setup, it reads the Secret's labels alone.
 
 - Supported Rancher versions: 2.15 and later.
 - Rancher mode needs a LibreDB Studio chart and release that carry it: chart 0.1.107 or later, with LibreDB Studio after 1.1.0.

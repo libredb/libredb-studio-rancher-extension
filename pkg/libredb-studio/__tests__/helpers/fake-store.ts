@@ -10,6 +10,8 @@ export interface Request {
   url: string;
   method: string;
   data?: unknown;
+  /** Only when the request set any */
+  headers?: Record<string, string>;
 }
 
 type Answer = unknown | ((request: Request) => unknown);
@@ -75,9 +77,13 @@ export function fakeStore(setup: FakeStoreSetup = {}): FakeStore {
       });
     }
     case 'request': {
-      const request = {
+      const request: Request = {
         store, url: String(payload.url), method: String(payload.method || 'get').toUpperCase(), data: payload.data
       };
+
+      if (payload.headers) {
+        request.headers = payload.headers as Record<string, string>;
+      }
       const line = `${ request.method } ${ request.url }`;
       const match = (setup.requests || []).find(([pattern]) => (typeof pattern === 'string' ? pattern === line : pattern.test(line)));
 

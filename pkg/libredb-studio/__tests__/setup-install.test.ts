@@ -1,5 +1,5 @@
 import { fakeStore, httpError, FakeStoreSetup, Request } from './helpers/fake-store';
-import { FakeKube, KUBE_REQUESTS } from './helpers/kube';
+import { FakeKube, KUBE_REQUESTS, secretDataReads } from './helpers/kube';
 import { CLUSTER, RANCHER_CA } from './helpers/cluster';
 import {
   installStudio, plannedSteps, SetupPlan, StepEvent, UndoEvent
@@ -384,6 +384,15 @@ describe('installing Studio', () => {
         `DELETE ${ CLIENT }`,
         `DELETE ${ NS }`,
       ]);
+    });
+
+    it('reads no Secret\'s data but the client secret it copies, also when it removes them again', async() => {
+      const target = cluster([[`POST ${ INSTALL }`, httpError(403)]]);
+
+      await install(ssoPlan(), target);
+
+      expect(lines(target.store)).toContain(`DELETE ${ NS }/secrets/libredb-studio-oidc`);
+      expect(secretDataReads(target.store.calls)).toStrictEqual([CLIENT_SECRET]);
     });
 
     it('uninstalls the release it started when Helm reports a failure, then removes the rest', async() => {

@@ -1,6 +1,6 @@
 import { fakeStore, httpError } from './helpers/fake-store';
 import {
-  canI, findAllIfVisible, findIfVisible, k8sPath, kube, kubeDelete, kubeGet, LOCAL_CLUSTER
+  canI, findAllIfVisible, findIfVisible, k8sPath, kube, kubeDelete, kubeGet, kubeMetadata, LOCAL_CLUSTER, METADATA_ONLY
 } from '../services/setup/k8s';
 
 describe('kubernetes requests through Rancher', () => {
@@ -33,6 +33,29 @@ describe('kubernetes requests through Rancher', () => {
     await expect(kubeGet(store, 'c', '/api/v1/namespaces/here')).resolves.toStrictEqual({ metadata: { name: 'here' } });
     await expect(kubeGet(store, 'c', '/api/v1/namespaces/gone')).resolves.toBeUndefined();
     await expect(kubeGet(store, 'c', '/api/v1/namespaces/broken')).rejects.toMatchObject({ _status: 500 });
+  });
+
+  it('reads an object\'s metadata alone, asking the API server to leave out its data', async() => {
+    const url = '/k8s/clusters/c/api/v1/namespaces/libredb-studio/secrets/here';
+    const store = fakeStore({ requests: [[`GET ${ url }`, { kind: 'PartialObjectMetadata', metadata: { name: 'here' } }]] });
+
+    expect(METADATA_ONLY).toBe('application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1');
+    await expect(kubeMetadata(store, 'c', '/api/v1/namespaces/libredb-studio/secrets/here')).resolves.toStrictEqual({ kind: 'PartialObjectMetadata', metadata: { name: 'here' } });
+    await expect(kubeMetadata(store, 'c', '/api/v1/namespaces/libredb-studio/secrets/gone')).resolves.toBeUndefined();
+    expect(store.dispatch).toHaveBeenCalledWith('cluster/request', {
+      url, method: 'get', data: undefined, redirectUnauthorized: false, headers: { accept: METADATA_ONLY }
+    });
+    expect(store.calls[0].headers).toStrictEqual({ accept: METADATA_ONLY });
+  });
+
+  it('sends no headers of its own on any other request', async() => {
+    const store = fakeStore({ requests: [[/^GET /, {}]] });
+
+    await kubeGet(store, 'c', '/api/v1/namespaces/x');
+
+    expect(store.dispatch).toHaveBeenCalledWith('cluster/request', {
+      url: '/k8s/clusters/c/api/v1/namespaces/x', method: 'get', data: undefined, redirectUnauthorized: false
+    });
   });
 
   it('deletes an object, says whether it was there, and throws any other failure', async() => {

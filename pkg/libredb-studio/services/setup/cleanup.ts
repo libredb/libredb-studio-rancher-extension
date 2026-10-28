@@ -1,6 +1,8 @@
 import type { StoreLike } from '../types';
 import { Failure, failureOf } from './failure';
-import { kubeDelete, kubeGet, LOCAL_CLUSTER } from './k8s';
+import {
+  kubeDelete, kubeGet, kubeMetadata, LOCAL_CLUSTER
+} from './k8s';
 import {
   OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, STUDIO_NAMESPACE, isManaged
 } from './names';
@@ -49,10 +51,11 @@ async function removal(undo: UndoId, remove: () => Promise<Removal>, secret = fa
 
 /**
  * Deletes an object only when it carries the extension's labels, so a record someone edited can
- * never steer the extension into deleting what it did not create.
+ * never steer the extension into deleting what it did not create. The labels are read alone, so the
+ * OIDC Secret's data never reaches the browser of whoever uninstalls or undoes a setup.
  */
 async function deleteManaged(store: StoreLike, cluster: string, path: string): Promise<Removal> {
-  const found = await kubeGet<{ metadata?: { labels?: Record<string, string> } }>(store, cluster, path);
+  const found = await kubeMetadata(store, cluster, path);
 
   if (!found) {
     return 'gone';

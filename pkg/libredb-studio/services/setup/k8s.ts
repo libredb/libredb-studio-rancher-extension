@@ -12,22 +12,37 @@ export function k8sPath(cluster: string, path: string): string {
   return `/k8s/clusters/${ encodeURIComponent(cluster) }${ path }`;
 }
 
-export function kube<T = unknown>(store: StoreLike, cluster: string, method: string, path: string, data?: unknown): Promise<T> {
+export function kube<T = unknown>(store: StoreLike, cluster: string, method: string, path: string, data?: unknown, headers?: Record<string, string>): Promise<T> {
   return store.dispatch(`${ cluster === LOCAL_CLUSTER ? 'management' : 'cluster' }/request`, {
-    url: k8sPath(cluster, path), method, data, redirectUnauthorized: false
+    url: k8sPath(cluster, path), method, data, redirectUnauthorized: false, ...(headers ? { headers } : {})
   }) as Promise<T>;
 }
 
 /** The object at the path, or nothing when it does not exist; any other failure throws */
-export async function kubeGet<T = unknown>(store: StoreLike, cluster: string, path: string): Promise<T | undefined> {
+export async function kubeGet<T = unknown>(store: StoreLike, cluster: string, path: string, headers?: Record<string, string>): Promise<T | undefined> {
   try {
-    return await kube<T>(store, cluster, 'get', path);
+    return await kube<T>(store, cluster, 'get', path, undefined, headers);
   } catch (err) {
     if (statusOf(err) === 404) {
       return undefined;
     }
     throw err;
   }
+}
+
+/**
+ * The Accept header that asks the API server for an object's metadata alone. Rancher's cluster
+ * proxy passes it on, so a Secret read this way never brings its data into the browser.
+ */
+export const METADATA_ONLY = 'application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1';
+
+export interface ObjectMetadata {
+  metadata?: { labels?: Record<string, string>, annotations?: Record<string, string>, resourceVersion?: string };
+}
+
+/** The object's metadata alone, or nothing when it does not exist; any other failure throws */
+export function kubeMetadata(store: StoreLike, cluster: string, path: string): Promise<ObjectMetadata | undefined> {
+  return kubeGet<ObjectMetadata>(store, cluster, path, { accept: METADATA_ONLY });
 }
 
 /** Deletes the object at the path: true when it was there, false when it was already gone */

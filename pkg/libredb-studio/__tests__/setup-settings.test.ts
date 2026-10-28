@@ -2,7 +2,7 @@ import { fakeStore, httpError, reviewAnswer, Request } from './helpers/fake-stor
 import {
   CLUSTER, RANCHER_CA, SSAR_DOWN, SSAR_LOCAL, readyCluster, reviewOf
 } from './helpers/cluster';
-import { FakeKube, KUBE_REQUESTS } from './helpers/kube';
+import { FakeKube, KUBE_REQUESTS, secretDataReads } from './helpers/kube';
 import {
   enableSso, loadSettings, recordProblem, saveNamespaces, uninstallStudio, AppInfo, ChangeOptions
 } from '../services/setup/settings';
@@ -464,6 +464,15 @@ describe('turning single sign-on on', () => {
     ]);
   });
 
+  it('reads no Secret\'s data but the client secret it copies, also when it takes everything back', async() => {
+    const { store } = installed({ upgradeStates: ['failed', 'deployed'] });
+
+    await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options());
+
+    expect(lines(store)).toContain(`DELETE ${ SECRET_PATH }`);
+    expect(secretDataReads(store.calls)).toStrictEqual([CLIENT_SECRET]);
+  });
+
   it('removes the OIDC client when the credentials cannot be copied, and upgrades nothing', async() => {
     const { store } = installed({ override: [[`POST ${ NS }/secrets`, httpError(403)]] });
     const result = await enableSso(store, CLUSTER, RECORD, APP_INFO, CONTEXT, CONFIRMED, options());
@@ -577,6 +586,16 @@ describe('uninstalling Studio', () => {
       },
     ]);
     expect(lines(store).filter((line) => line.includes(LOCAL))).toStrictEqual([]);
+  });
+
+  it('reads no Secret\'s data, only the labels of what it deletes', async() => {
+    const { store } = installed({ record: SSO_RECORD });
+
+    await uninstallStudio(store, CLUSTER, SSO_RECORD, 'libredb-studio', options());
+
+    expect(lines(store)).toContain(`GET ${ SECRET_PATH }`);
+    expect(lines(store)).toContain(`DELETE ${ SECRET_PATH }`);
+    expect(secretDataReads(store.calls)).toStrictEqual([]);
   });
 
   it('removes nothing else when the app cannot be uninstalled', async() => {
