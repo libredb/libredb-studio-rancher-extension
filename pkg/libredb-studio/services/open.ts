@@ -1,6 +1,5 @@
 import { reactive } from 'vue';
 import { ContractKind, ContractResource, kindFor } from '../contract/kinds';
-import { databaseLink } from '../contract/connection-id';
 import { ensureReview, reviewNow, reviewState, ReviewState } from './access';
 import { findStudioLinks, selectStudioLink, StudioLink } from './navlink';
 import type { StoreLike } from './types';
@@ -151,7 +150,12 @@ export function canOpen(resource: ShellResource): boolean {
 export async function openDatabase({
   store, cluster, kind, resource
 }: OpenTarget): Promise<OpenResult> {
-  const link = await loadStudioLink(store, cluster);
+  // The link builder hashes with the shell's crypto helpers, which would add about 110 KiB to the
+  // entry that loads on every Rancher page, so it loads on the first open, beside the NavLink read.
+  const [link, { databaseLink }] = await Promise.all([
+    loadStudioLink(store, cluster),
+    import(/* webpackChunkName: "studio-link" */ '../contract/connection-id'),
+  ]);
 
   if (!link) {
     return 'not-set-up';
