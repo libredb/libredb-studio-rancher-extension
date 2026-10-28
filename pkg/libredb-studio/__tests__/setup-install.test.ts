@@ -557,7 +557,7 @@ describe('installing Studio', () => {
     it('keeps the namespace while a Secret or ConfigMap the setup did not create is left in it, and names each', async() => {
       const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
 
-      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'zzzzzzzzzzzzzzzz' } });
       target.kube.objects.set(`${ NS }/configmaps/team-notes`, { metadata: { name: 'team-notes', labels: { 'app.kubernetes.io/part-of': 'libredb-studio' } } });
       const { run } = await install(localPlan(), target);
 
@@ -571,13 +571,13 @@ describe('installing Studio', () => {
     it('lists the Secrets and ConfigMaps by their metadata alone, so no Secret data reaches the browser', async() => {
       const target = cluster([[`POST ${ INSTALL }`, httpError(500)]]);
 
-      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'bm90LWEtcmVhbC1rZXk=' } });
+      target.kube.objects.set(`${ NS }/secrets/libredb-studio-tls`, { metadata: { name: 'libredb-studio-tls' }, data: { 'tls.key': 'zzzzzzzzzzzzzzzz' } });
       await install(localPlan(), target);
       const lists = target.store.calls.filter((call) => call.method === 'GET' && (call.url === `${ NS }/secrets` || call.url === `${ NS }/configmaps`));
 
       expect(lists.map((call) => call.url)).toStrictEqual([`${ NS }/secrets`, `${ NS }/configmaps`]);
       expect(lists.map((call) => call.headers)).toStrictEqual([{ accept: METADATA_LIST_ONLY }, { accept: METADATA_LIST_ONLY }]);
-      expect(JSON.stringify(target.store.dispatch.mock.results)).not.toContain('bm90LWEtcmVhbC1rZXk=');
+      expect(JSON.stringify(target.store.dispatch.mock.results)).not.toContain('zzzzzzzzzzzzzzzz');
       expect(secretDataReads(target.store.calls)).toStrictEqual([]);
     });
 
