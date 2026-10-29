@@ -24,6 +24,8 @@ export interface ChartVersion {
 export const MIN_CHART_VERSION = '0.1.107';
 /** The first application after 1.1.0, which has neither the access review nor Kubernetes discovery */
 export const MIN_APP_VERSION = '1.1.1';
+/** The first chart whose discovery takes kinds other than CloudNativePG; before it the schema allows only cnpg */
+export const MIN_KINDS_CHART_VERSION = '0.1.113';
 
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 
@@ -116,4 +118,9 @@ export function pickChartVersion(entries: ChartVersion[] | undefined): { chosen?
     !!parseVersion(appVersion) && compareVersions(appVersion as string, MIN_APP_VERSION) >= 0);
 
   return { chosen, newest: released[0] };
+}
+
+/** Whether a chart version takes every discovery kind, not CloudNativePG alone */
+export function chartTakesAllKinds(chartVersion: string | undefined): boolean {
+  return !!parseVersion(chartVersion) && compareVersions(chartVersion as string, MIN_KINDS_CHART_VERSION) >= 0;
 }

@@ -15,6 +15,8 @@ Single sign-on is experimental: owners of the cluster that runs LibreDB Studio w
 The Settings page changes the namespaces LibreDB Studio discovers, turns single sign-on on, and uninstalls LibreDB Studio after the release name is typed by hand.
 Once single sign-on is on, a Rancher administrator can rotate its client secret there, which restarts LibreDB Studio with the new one and signs everyone out of it once, or turn single sign-on off again, which upgrades LibreDB Studio back to its own sign-in and deletes the OIDC client.
 Both ask for the OIDC client's name typed by hand.
+Settings also changes the kinds of database LibreDB Studio discovers, CloudNativePG alone by default, each once its operator's CustomResourceDefinition is in the cluster; the Databases page shows CloudNativePG only, and the other kinds are listed in LibreDB Studio.
+Settings rebuilds every chart value on each save, so a value set with helm outside the extension, discovery kinds among them, is replaced on the next Settings save.
 
 It has no backend of its own: it works through Rancher's API as the signed-in user, never reads a database's Secret, and opens LibreDB Studio, installed in the same cluster, in a new tab.
 The only Secret value it reads is the OIDC client secret Rancher generates, once each time an administrator sets up single sign-on or rotates the secret, and it writes that secret straight into LibreDB Studio's own Secret without showing it.

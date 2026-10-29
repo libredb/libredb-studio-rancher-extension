@@ -20,17 +20,31 @@ import {
   aggregationCheck, rancherContext, ssoChecks, Check, RancherContext
 } from './preflight';
 import { createConfigMap, readRecord, replaceRecord } from './record';
-import { releaseState, restartStudio, upgradeRelease, waitForRelease } from './release';
+import {
+  releaseState, restartStudio, upgradeRelease, waitForRelease, ReleaseState
+} from './release';
 import { runSteps, StepEvent } from './steps';
-import { oidcIssuer, sameRecord, SetupRecord, SsoRecord } from './values';
-import { OIDC_SCOPE_LISTS } from './versions';
+import {
+  oidcIssuer, sameRecord, DiscoveryKind, DISCOVERY_KINDS, SetupRecord, SsoRecord
+} from './values';
+import { chartTakesAllKinds, MIN_KINDS_CHART_VERSION, OIDC_SCOPE_LISTS } from './versions';
 import type { WaitOptions } from './wait';
 
 /**
- * F7, Studio's settings: the discovered namespaces, single sign-on and uninstall, for a Studio the
+ * F7, Studio's settings: the discovered namespaces and kinds, single sign-on and uninstall, for a Studio the
  * setup wizard installed. Rancher keeps no values on the app, so every change rebuilds them from
  * the wizard's record, and the record follows only after Studio took the change.
  */
+
+/** A discovery kind as Settings could change it */
+export interface KindState {
+  id: DiscoveryKind;
+  crd: string;
+  /** Whether its CustomResourceDefinition is on the cluster; nothing when that could not be read */
+  installed?: boolean;
+  /** Whether the chart an upgrade from Settings uses takes it */
+  chartTakes: boolean;
+}
 
 /** What the settings page knows of the app */
 export interface AppInfo {
@@ -58,6 +72,8 @@ export interface StudioSettings {
   aggregation?: Check;
   /** The namespaces discovery may cover */
   namespaces: string[];
+  /** For a trusted record: each kind discovery can list */
+  kinds?: KindState[];
   /** Studio's namespace was moved into a project, whose members can then read its Secrets */
   inProject?: boolean;
   /** For a Studio without single sign-on: whether it can be turned on here, and with what */
@@ -166,10 +182,65 @@ async function visibleNamespaces(store: StoreLike): Promise<string[]> {
   return namespaces.map((item) => item.metadata.name).filter((name) => name !== STUDIO_NAMESPACE).sort((a, b) => a.localeCompare(b));
 }
 
+const CRDS = '/apis/apiextensions.k8s.io/v1/customresourcedefinitions';
+
+/** Whether a CustomResourceDefinition is on the cluster, read by its metadata alone; any failure but 404 throws */
+async function crdInstalled(store: StoreLike, cluster: string, crd: string): Promise<boolean> {
+  return !!await kubeMetadata(store, cluster, `${ CRDS }/${ crd }`);
+}
+
+/** The chart version an upgrade from Settings uses: the one deployed now, or the record's when the app does not say */
+function upgradeVersion(state: ReleaseState | undefined, record: SetupRecord): string {
+  return state?.chartVersion || record.release.chartVersion;
+}
+
+/** Whether a chart version takes the kinds, which before 0.1.113 must be CloudNativePG alone */
+function chartTakes(kinds: DiscoveryKind[], chartVersion: string): boolean {
+  return kinds.every((kind) => kind === 'cnpg') || chartTakesAllKinds(chartVersion);
+}
+
+/** Each discovery kind with its CustomResourceDefinition's state, and whether the chart takes it */
+function kindStates(store: StoreLike, cluster: string, chartVersion: string): Promise<KindState[]> {
+  return Promise.all(DISCOVERY_KINDS.map(async({ id, crd }) => ({
+    id, crd, installed: await crdInstalled(store, cluster, crd).catch(() => undefined), chartTakes: chartTakes([id], chartVersion)
+  })));
+}
+
 function refused(reason: string, args?: Record<string, string>): ChangeResult {
   return {
     ok: false, failure: args ? { reason, args } : { reason }, undone: []
   };
+}
+
+/**
+ * Why the kinds cannot be deployed: one the chart refuses to render, or one whose
+ * CustomResourceDefinition is not on the cluster, since one missing withdraws every discovered database
+ */
+async function kindsRefusal(store: StoreLike, cluster: string, kinds: DiscoveryKind[], chartVersion: string): Promise<ChangeResult | undefined> {
+  if (!chartTakes(kinds, chartVersion)) {
+    return refused('kindsNeedChart', { chartVersion, min: MIN_KINDS_CHART_VERSION });
+  }
+
+  for (const { crd } of DISCOVERY_KINDS.filter(({ id }) => kinds.includes(id))) {
+    if (!await crdInstalled(store, cluster, crd)) {
+      return refused('crdMissing', { crd });
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Why the record's kinds, carried forward unchanged, cannot be deployed: checked before any step,
+ * so nothing is created that an undo would have to take back. A record without kinds deploys
+ * the chart's default, as it always did.
+ */
+async function carriedKindsRefusal(store: StoreLike, cluster: string, record: SetupRecord): Promise<ChangeResult | undefined> {
+  if (!record.kinds) {
+    return undefined;
+  }
+
+  return kindsRefusal(store, cluster, record.kinds, upgradeVersion(await releaseState(store, cluster, STUDIO_NAMESPACE, RELEASE_NAME), record));
 }
 
 const OIDC_SECRET_PATH = `/api/v1/namespaces/${ STUDIO_NAMESPACE }/secrets/${ OIDC_SECRET }`;
@@ -233,6 +304,7 @@ export async function loadSettings(store: StoreLike, cluster: string): Promise<S
     inProject:   await namespaceInProject(store, cluster),
     sso,
     ssoAdmin:    record?.sso && !problem ? await canManageClient(store, record.sso.client) : undefined,
+    kinds:       record && !problem ? await kindStates(store, cluster, upgradeVersion(state, record)) : undefined,
   };
 }
 
@@ -265,7 +337,7 @@ async function upgradeTo(store: StoreLike, cluster: string, record: SetupRecord,
     throw new StepFailure('changedSinceLoad');
   }
 
-  const operation = await upgradeRelease(store, cluster, record, before.chartVersion || record.release.chartVersion);
+  const operation = await upgradeRelease(store, cluster, record, upgradeVersion(before, record));
 
   await waitForRelease(store, cluster, record, operation, before.revision, options);
 }
@@ -293,6 +365,75 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
     return refused('badNamespaces');
   }
 
+  const kindsProblem = await carriedKindsRefusal(store, cluster, record);
+
+  if (kindsProblem) {
+    return kindsProblem;
+  }
+
+  return upgradeWith(store, cluster, record, { namespaces: [...new Set(namespaces)].sort((a, b) => a.localeCompare(b)) }, live.resourceVersion, options);
+}
+
+/**
+ * Changes the kinds of database Studio discovers. Each chosen kind's CustomResourceDefinition must be
+ * on the cluster, since one missing withdraws every discovered database, and kinds other than
+ * CloudNativePG need the chart an upgrade from Settings uses to be 0.1.113 or later.
+ */
+export async function saveKinds(store: StoreLike, cluster: string, record: SetupRecord, app: AppInfo, kinds: string[], options: ChangeOptions = {}): Promise<ChangeResult> {
+  const problem = recordProblem(record, cluster);
+
+  if (problem) {
+    return refused('untrustedRecord', { field: problem });
+  }
+
+  if (!kinds.length) {
+    return refused('noKinds');
+  }
+
+  const unknown = kinds.find((kind) => !DISCOVERY_KINDS.some(({ id }) => id === kind));
+
+  if (unknown !== undefined) {
+    return refused('unknownKind', { kind: unknown });
+  }
+
+  if (!await canI(store, cluster, {
+    verb: '*', group: '*', resource: '*'
+  })) {
+    return refused('notOwner');
+  }
+
+  const live = await unchangedRecord(store, cluster, record);
+  const state = await releaseState(store, cluster, STUDIO_NAMESPACE, RELEASE_NAME);
+
+  if (!live || state?.revision !== app.revision) {
+    return refused('changedSinceLoad');
+  }
+
+  if (await namespaceInProject(store, cluster)) {
+    return refused('inProject', { namespace: STUDIO_NAMESPACE });
+  }
+
+  // The record's namespaces are deployed again, so revalidated against what the user sees now
+  if (namespacesError(record.namespaces, await visibleNamespaces(store))) {
+    return refused('badNamespaces');
+  }
+
+  // In the chart's order, each once
+  const chosen = DISCOVERY_KINDS.filter(({ id }) => kinds.includes(id)).map(({ id }) => id);
+  const kindsProblem = await kindsRefusal(store, cluster, chosen, upgradeVersion(state, record));
+
+  if (kindsProblem) {
+    return kindsProblem;
+  }
+
+  return upgradeWith(store, cluster, record, { kinds: chosen }, live.resourceVersion, options);
+}
+
+/**
+ * Upgrades Studio to the record with a change, at the host its Ingress serves, then writes the
+ * record over the version read
+ */
+async function upgradeWith(store: StoreLike, cluster: string, record: SetupRecord, change: Partial<SetupRecord>, resourceVersion: string | undefined, options: ChangeOptions): Promise<ChangeResult> {
   const host = await deployedHost(store, cluster);
 
   if (!host) {
@@ -300,7 +441,7 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
   }
 
   const changed: SetupRecord = {
-    ...record, host, namespaces: [...new Set(namespaces)].sort((a, b) => a.localeCompare(b))
+    ...record, ...change, host
   };
 
   // Studio trusts the issuer for every sign-in, so it is Rancher's own, never the record's
@@ -320,7 +461,7 @@ export async function saveNamespaces(store: StoreLike, cluster: string, record: 
       return 'done';
     },
     saveRecord: async() => {
-      await replaceRecord(store, cluster, changed, live.resourceVersion);
+      await replaceRecord(store, cluster, changed, resourceVersion);
 
       return 'done';
     },
@@ -416,6 +557,12 @@ export async function enableSso(store: StoreLike, cluster: string, record: Setup
   // The namespaces the administrator confirmed, revalidated, never the record's carried forward
   if (namespacesError(confirmed.namespaces, await visibleNamespaces(store))) {
     return refused('badNamespaces');
+  }
+
+  const kindsProblem = await carriedKindsRefusal(store, cluster, record);
+
+  if (kindsProblem) {
+    return kindsProblem;
   }
 
   const namespaces = [...new Set(confirmed.namespaces)].sort((a, b) => a.localeCompare(b));
@@ -655,6 +802,12 @@ export async function disableSso(store: StoreLike, cluster: string, record: Setu
   // The namespaces the administrator confirmed, revalidated, never the record's carried forward
   if (namespacesError(confirmed.namespaces, await visibleNamespaces(store))) {
     return refused('badNamespaces');
+  }
+
+  const kindsProblem = await carriedKindsRefusal(store, cluster, record);
+
+  if (kindsProblem) {
+    return kindsProblem;
   }
 
   const foreign = await unmanagedSsoObject(store, cluster, name);

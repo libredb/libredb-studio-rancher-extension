@@ -44,6 +44,20 @@ libredbStudio:
     ssoOn: Rancher single sign-on, through the OIDC client {client}
     ssoOff: Studio's own sign-in
     save: Save
+    kindsTitle: Kinds of database to discover
+    kindsIntro: LibreDB Studio discovers the databases of these kinds in the chosen namespaces. Each kind needs its operator's CustomResourceDefinition in this cluster; while one chosen is missing, LibreDB Studio withdraws every discovered database, of every kind.
+    kindsRancherNote: Rancher's Databases page and its Open action show CloudNativePG Clusters only. Databases of the other kinds are listed in LibreDB Studio, not on Rancher's pages.
+    kindsMongoNote: With MongoDB Community, the MongoDB driver follows the replica set members the server advertises, which only an egress policy confines.
+    kindNames:
+      cnpg: CloudNativePG
+      edbpg: EDB Postgres for Kubernetes
+      pgo: Crunchy PGO
+      mongo: MongoDB Community
+    kindState:
+      ready: Its CustomResourceDefinition {crd} is in this cluster.
+      noCrd: Its CustomResourceDefinition {crd} is not in this cluster. Install its operator first.
+      unknown: Whether its CustomResourceDefinition {crd} is in this cluster could not be checked.
+      needsChart: Its CustomResourceDefinition {crd} is in this cluster, but discovering it needs the libredb-studio chart {min} or later. Upgrade the chart in Apps first.
     ssoTitle: Single sign-on (experimental)
     ssoIntro: Let people sign in with their Rancher account. LibreDB Studio is upgraded, and from then on each person opens only the databases their own Rancher roles let them read.
     enableSso: Turn on single sign-on
@@ -68,12 +82,14 @@ libredbStudio:
     refused: Nothing was changed.
     done:
       namespaces: LibreDB Studio now discovers the chosen namespaces.
+      kinds: LibreDB Studio now discovers the chosen kinds of database.
       sso: Single sign-on through Rancher is on.
       rotate: The client secret is rotated, and LibreDB Studio runs with the new one. Open LibreDB Studio and sign in to check.
       ssoOff: Single sign-on is off. Sign in to LibreDB Studio as admin@libredb.org with its generated admin password, which a cluster owner can read from /app/data/auth-bootstrap.json in the pod; the pod prints it to its log only on the start that generates it.
       uninstall: LibreDB Studio is uninstalled.
     failed:
       namespaces: The namespaces could not be changed.
+      kinds: The kinds of database could not be changed.
       sso: Single sign-on could not be turned on.
       rotate: The client secret could not be rotated completely, and until it is, people may not be able to sign in. Rotate it again.
       rotateUnchanged: The client secret was not rotated. Rancher's client secret did not change, so signing in goes on as before.
@@ -238,6 +254,11 @@ libredbStudio:
       ssoNotOn: Single sign-on is not on.
       notConfirmedClient: Type the OIDC client's name to confirm.
       secretKeyMissing: The OIDC client {name} no longer holds the secret LibreDB Studio was given (client-secret-1), so Settings cannot rotate it. Turn single sign-on off, then on again, to register LibreDB Studio afresh.
+      notOwner: Changing the settings of LibreDB Studio needs an owner of this cluster.
+      noKinds: Choose at least one kind of database to discover.
+      unknownKind: LibreDB Studio does not discover the kind {kind}.
+      crdMissing: The CustomResourceDefinition {crd} is not in this cluster, and while it is missing LibreDB Studio withdraws every discovered database. Install its operator first, or leave that kind out.
+      kindsNeedChart: Discovering kinds other than CloudNativePG needs the libredb-studio chart {min} or later, and LibreDB Studio runs the chart {chartVersion}. Upgrade the chart in Apps first.
       regenerateUnknown: Whether Rancher generated a new client secret is not known ({detail}). If it did, people cannot sign in until LibreDB Studio has the new one, so rotate it again.
 product:
   libredb: LibreDB Studio

@@ -4,7 +4,7 @@ import Settings from '../pages/Settings.vue';
 import type { UndoEvent } from '../services/setup/cleanup';
 import type { Failure } from '../services/setup/failure';
 import {
-  disableSso, enableSso, loadSettings, rotateClientSecret, saveNamespaces, uninstallStudio, ChangeOptions, ChangeStepId, StudioSettings
+  disableSso, enableSso, loadSettings, rotateClientSecret, saveKinds, saveNamespaces, uninstallStudio, ChangeOptions, ChangeStepId, StudioSettings
 } from '../services/setup/settings';
 import type { SetupRecord } from '../services/setup/values';
 import { RANCHER_CA } from './helpers/cluster';
@@ -13,6 +13,7 @@ jest.mock('../services/setup/settings', () => ({
   ...jest.requireActual('../services/setup/settings'),
   loadSettings:       jest.fn(),
   saveNamespaces:     jest.fn(),
+  saveKinds:          jest.fn(),
   enableSso:          jest.fn(),
   rotateClientSecret: jest.fn(),
   disableSso:         jest.fn(),
@@ -21,6 +22,7 @@ jest.mock('../services/setup/settings', () => ({
 
 const loadMock = loadSettings as jest.Mock;
 const saveMock = saveNamespaces as jest.Mock;
+const kindsMock = saveKinds as jest.Mock;
 const ssoMock = enableSso as jest.Mock;
 const rotateMock = rotateClientSecret as jest.Mock;
 const ssoOffMock = disableSso as jest.Mock;
@@ -60,7 +62,21 @@ const SETTINGS: StudioSettings = {
     id: 'aggregation', state: 'ok', reason: 'ok'
   },
   namespaces: ['team-a', 'team-b'],
-  sso:        {
+  kinds:      [
+    {
+      id: 'cnpg', crd: 'clusters.postgresql.cnpg.io', installed: true, chartTakes: true
+    },
+    {
+      id: 'edbpg', crd: 'clusters.postgresql.k8s.enterprisedb.io', installed: false, chartTakes: true
+    },
+    {
+      id: 'pgo', crd: 'postgresclusters.postgres-operator.crunchydata.com', installed: undefined, chartTakes: true
+    },
+    {
+      id: 'mongo', crd: 'mongodbcommunity.mongodbcommunity.mongodb.com', installed: true, chartTakes: true
+    },
+  ],
+  sso: {
     checks: [{
       id: 'oidcAdmin', state: 'ok', reason: 'ok', sso: true
     }],
@@ -121,6 +137,7 @@ describe('settings page', () => {
   beforeEach(() => {
     loadMock.mockReset();
     saveMock.mockReset();
+    kindsMock.mockReset();
     ssoMock.mockReset();
     rotateMock.mockReset();
     ssoOffMock.mockReset();
@@ -173,7 +190,7 @@ describe('settings page', () => {
     await flushPromises();
 
     // The shell's field components escape their label themselves, as the banner does
-    const keys = ['libredbStudio.settings.title', 'libredbStudio.settings.host', 'libredbStudio.settings.ssoOff', 'libredbStudio.settings.ssoIntro', 'libredbStudio.setup.form.namespaces', 'libredbStudio.settings.typeName'];
+    const keys = ['libredbStudio.settings.title', 'libredbStudio.settings.host', 'libredbStudio.settings.ssoOff', 'libredbStudio.settings.ssoIntro', 'libredbStudio.setup.form.namespaces', 'libredbStudio.settings.typeName', 'libredbStudio.settings.kindsRancherNote', 'libredbStudio.settings.kindNames.cnpg', 'libredbStudio.settings.kindState.ready'];
     const asText = raw.mock.calls.filter((call) => keys.includes(call[0]));
 
     expect([...new Set(asText.map((call) => call[0]))].sort()).toStrictEqual([...keys].sort());
@@ -395,6 +412,102 @@ describe('settings page', () => {
 
       expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.refused%');
       expect(text(wrapper, 'libredb-settings-failure')).toBe('%libredbStudio.setup.failure.request%{"detail":"chunk failed to load"}');
+    });
+  });
+
+  describe('the discovered kinds', () => {
+    const kindField = (wrapper: VueWrapper, id: string) => field(wrapper, `libredb-settings-kind-${ id }`);
+
+    it('offers each kind with its CustomResourceDefinition\'s state, and says the Databases page shows CloudNativePG only', async() => {
+      const wrapper = await loaded({
+        ...SETTINGS,
+        kinds: SETTINGS.kinds!.map((kind) => (kind.id === 'pgo' ? {
+          ...kind, installed: true, chartTakes: false
+        } : kind))
+      });
+
+      expect(kindField(wrapper, 'cnpg').props('value')).toBe(true);
+      expect(kindField(wrapper, 'mongo').props('value')).toBe(false);
+      expect(kindField(wrapper, 'cnpg').props('label')).toBe('%libredbStudio.settings.kindNames.cnpg%');
+      expect(text(wrapper, 'libredb-settings-kind-cnpg-state')).toBe('%libredbStudio.settings.kindState.ready%{"crd":"clusters.postgresql.cnpg.io","min":"0.1.113"}');
+      expect(text(wrapper, 'libredb-settings-kind-edbpg-state')).toContain('%libredbStudio.settings.kindState.noCrd%');
+      expect(text(wrapper, 'libredb-settings-kind-pgo-state')).toContain('%libredbStudio.settings.kindState.needsChart%');
+      expect(text(wrapper, 'libredb-settings-kinds')).toContain('%libredbStudio.settings.kindsRancherNote%');
+      expect(has(wrapper, 'libredb-settings-kinds-mongo')).toBe(false);
+      // A kind can be chosen only with its CustomResourceDefinition there and a chart that takes it
+      expect(kindField(wrapper, 'cnpg').attributes('disabled')).toBe('false');
+      expect(kindField(wrapper, 'edbpg').attributes('disabled')).toBe('true');
+      expect(kindField(wrapper, 'pgo').attributes('disabled')).toBe('true');
+      expect(kindField(wrapper, 'mongo').attributes('disabled')).toBe('false');
+      // A screen reader gives the reason with the checkbox, disabled or not
+      expect(kindField(wrapper, 'edbpg').attributes('aria-describedby')).toBe('libredb-settings-kind-edbpg-state');
+      expect(wrapper.find('#libredb-settings-kind-edbpg-state').attributes('data-testid')).toBe('libredb-settings-kind-edbpg-state');
+
+      const unknown = await loaded();
+
+      expect(text(unknown, 'libredb-settings-kind-pgo-state')).toContain('%libredbStudio.settings.kindState.unknown%');
+    });
+
+    it('saves a changed choice, says what MongoDB Community lets the driver do, then reads the settings again', async() => {
+      kindsMock.mockResolvedValue({ ok: true, undone: [] });
+      const wrapper = await loaded();
+
+      expect(disabled(wrapper, 'libredb-settings-kinds-save')).toBe(true);
+      kindField(wrapper, 'mongo').vm.$emit('update:value', true);
+      await flushPromises();
+      expect(text(wrapper, 'libredb-settings-kinds-mongo')).toBe('%libredbStudio.settings.kindsMongoNote%');
+      expect(disabled(wrapper, 'libredb-settings-kinds-save')).toBe(false);
+
+      await wrapper.find('[data-testid="libredb-settings-kinds-save"]').trigger('click');
+      await flushPromises();
+
+      expect(kindsMock).toHaveBeenCalledWith(expect.anything(), 'c-m-1', RECORD, SETTINGS.app, ['cnpg', 'mongo'], expect.anything());
+      expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.done.kinds%');
+      expect(loadMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('starts from the record\'s kinds, and lets a kind be dropped whatever its state', async() => {
+      kindsMock.mockResolvedValue({
+        ok: false, failedStep: 'upgrade', failure: { reason: 'helmFailed' }, undone: []
+      });
+      const wrapper = await loaded({ ...SETTINGS, record: { ...RECORD, kinds: ['cnpg', 'edbpg'] } });
+
+      expect(kindField(wrapper, 'edbpg').props('value')).toBe(true);
+      expect(kindField(wrapper, 'edbpg').attributes('disabled')).toBe('false');
+      kindField(wrapper, 'edbpg').vm.$emit('update:value', false);
+      await flushPromises();
+      await wrapper.find('[data-testid="libredb-settings-kinds-save"]').trigger('click');
+      await flushPromises();
+
+      expect(kindsMock).toHaveBeenCalledWith(expect.anything(), 'c-m-1', expect.anything(), SETTINGS.app, ['cnpg'], expect.anything());
+      expect(text(wrapper, 'libredb-settings-result')).toBe('%libredbStudio.settings.failed.kinds%');
+    });
+
+    it('says that at least one kind is needed and does not save none', async() => {
+      const wrapper = await loaded();
+
+      kindField(wrapper, 'cnpg').vm.$emit('update:value', false);
+      await flushPromises();
+
+      expect(text(wrapper, 'libredb-settings-kinds-error')).toBe('%libredbStudio.setup.failure.noKinds%');
+      expect(disabled(wrapper, 'libredb-settings-kinds-save')).toBe(true);
+    });
+
+    it('reports a change that broke off before any step could say why', async() => {
+      kindsMock.mockRejectedValue(new Error('chunk failed to load'));
+      const wrapper = await loaded();
+
+      kindField(wrapper, 'mongo').vm.$emit('update:value', true);
+      await flushPromises();
+      await wrapper.find('[data-testid="libredb-settings-kinds-save"]').trigger('click');
+      await flushPromises();
+
+      expect(text(wrapper, 'libredb-settings-failure')).toBe('%libredbStudio.setup.failure.request%{"detail":"chunk failed to load"}');
+    });
+
+    it('offers no kinds while the app is not there', async() => {
+      expect(has(await loaded({ ...SETTINGS, app: undefined }), 'libredb-settings-kinds')).toBe(false);
+      expect(has(await loaded({ ...SETTINGS, kinds: undefined }), 'libredb-settings-kinds')).toBe(false);
     });
   });
 
