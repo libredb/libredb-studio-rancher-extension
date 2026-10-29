@@ -4,7 +4,7 @@ import {
 } from './helpers/cluster';
 import { FakeKube, KUBE_REQUESTS, Reaction, secretDataReads } from './helpers/kube';
 import {
-  disableSso, enableSso, loadSettings, recordProblem, rotateClientSecret, rotationFailure, saveNamespaces, uninstallStudio, AppInfo, ChangeOptions, ChangeStepId
+  disableSso, enableSso, loadSettings, recordProblem, rotateClientSecret, rotationFailure, saveKinds, saveNamespaces, uninstallStudio, AppInfo, ChangeOptions, ChangeStepId
 } from '../services/setup/settings';
 import { chartValues, serializeRecord, SetupRecord } from '../services/setup/values';
 import type { RancherContext } from '../services/setup/preflight';
@@ -27,6 +27,10 @@ const SECRET_B64 = btoa('not-a-real-client-secret');
 const NEW_SECRET_B64 = btoa('not-a-real-new-client-secret');
 const REGENERATE = 'cattle.io/oidc-client-secret-regenerate';
 const RESTARTED_AT = 'kubectl.kubernetes.io/restartedAt';
+const CRDS = `${ K8S }/apis/apiextensions.k8s.io/v1/customresourcedefinitions`;
+const CRD = {
+  cnpg: 'clusters.postgresql.cnpg.io', edbpg: 'clusters.postgresql.k8s.enterprisedb.io', pgo: 'postgresclusters.postgres-operator.crunchydata.com', mongo: 'mongodbcommunity.mongodbcommunity.mongodb.com'
+};
 const MANAGED = { 'app.kubernetes.io/managed-by': 'libredb-studio-rancher-extension', 'app.kubernetes.io/part-of': 'libredb-studio' };
 
 /**
@@ -73,6 +77,8 @@ const SSO = {
   client: 'libredb-studio-c-m-1', issuer: 'https://rancher.example.com/oidc', scope: 'openid profile groups', rancherCA: true
 };
 const SSO_RECORD: SetupRecord = { ...RECORD, sso: SSO };
+/** A record whose owner chose kinds in Settings, which every other change carries forward */
+const KINDS_RECORD: SetupRecord = { ...RECORD, kinds: ['cnpg', 'mongo'] };
 const APP_INFO: AppInfo = {
   chartVersion: '0.1.111', appVersion: '1.2.1', status: 'deployed', revision: 3, managed: true
 };
@@ -257,6 +263,14 @@ function options(): ChangeOptions & { events: unknown[], undone: unknown[] } {
   };
 }
 
+/** The chart 0.1.113 deployed, whose discovery takes every kind */
+const CHART_113 = {
+  version: '0.1.113', appVersion: '1.2.2', annotations: MANAGED
+};
+
+/** The CustomResourceDefinitions of these kinds put on the cluster */
+const withCrds = (kube: FakeKube, kinds: (keyof typeof CRD)[]) => kinds.forEach((kind) => kube.objects.set(`${ CRDS }/${ CRD[kind] }`, { metadata: { name: CRD[kind] } }));
+
 describe('the setup record', () => {
   it('is trusted only for this cluster, the extension\'s own release and the OIDC client it names', () => {
     expect(recordProblem(RECORD, CLUSTER)).toBeUndefined();
@@ -294,6 +308,7 @@ describe('the setup record', () => {
       };
 
       await expect(saveNamespaces(store, CLUSTER, record, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(refused);
+      await expect(saveKinds(store, CLUSTER, record, APP_INFO, ['cnpg'], options())).resolves.toStrictEqual(refused);
       await expect(enableSso(store, CLUSTER, record, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(refused);
       await expect(rotateClientSecret(store, CLUSTER, record, APP_INFO, record.sso?.client as string, options())).resolves.toStrictEqual(refused);
       await expect(disableSso(store, CLUSTER, record, APP_INFO, { name: record.sso?.client as string, namespaces: ['team-a'] }, options())).resolves.toStrictEqual(refused);
@@ -330,6 +345,38 @@ describe('loading Studio\'s settings', () => {
     });
     expect(settings.recordProblem).toBeUndefined();
     expect(settings.sso?.checks.map((check) => check.id)).toStrictEqual(['oidcProvider', 'oidcAdmin', 'oidcClient']);
+  });
+
+  it('tells for each discovery kind whether its CustomResourceDefinition is on the cluster and whether the chart takes it', async() => {
+    const { store, kube } = installed();
+
+    withCrds(kube, ['cnpg', 'mongo']);
+
+    const unreadable = `GET ${ CRDS }/${ CRD.pgo }`;
+    const settings = await loadSettings(installed({ override: [[unreadable, httpError(403)]] }).store, CLUSTER);
+
+    expect(settings.kinds).toStrictEqual([
+      {
+        id: 'cnpg', crd: CRD.cnpg, installed: false, chartTakes: true
+      },
+      {
+        id: 'edbpg', crd: CRD.edbpg, installed: false, chartTakes: false
+      },
+      {
+        id: 'pgo', crd: CRD.pgo, installed: undefined, chartTakes: false
+      },
+      {
+        id: 'mongo', crd: CRD.mongo, installed: false, chartTakes: false
+      },
+    ]);
+    expect((await loadSettings(store, CLUSTER)).kinds?.map(({ id, installed }) => `${ id } ${ installed }`)).toStrictEqual(['cnpg true', 'edbpg false', 'pgo false', 'mongo true']);
+
+    const newer = installed({ chart: CHART_113 });
+
+    expect((await loadSettings(newer.store, CLUSTER)).kinds?.every(({ chartTakes }) => chartTakes)).toBe(true);
+    // The chart the record names when the app does not say, as an upgrade from Settings would use
+    expect((await loadSettings(installed({ chart: { annotations: MANAGED } }).store, CLUSTER)).kinds?.[3].chartTakes).toBe(false);
+    expect((await loadSettings(installed({ record: { ...RECORD, cluster: 'c-m-2' } }).store, CLUSTER)).kinds).toBeUndefined();
   });
 
   it('says when Studio\'s namespace was moved into a project', async() => {
@@ -616,6 +663,223 @@ describe('changing the discovered namespaces', () => {
       ok: false, failedStep: 'saveRecord', failure: { reason: 'request', args: { detail: 'HTTP 409: the object has been modified' } }
     });
     expect(target.kube.objects.get(RECORD_PATH)).toBe(meanwhile);
+  });
+});
+
+describe('changing the discovered kinds', () => {
+  it('upgrades Studio with the whole set of values and the kinds in the chart\'s order, then updates the record', async() => {
+    const { store, kube } = installed({ chart: CHART_113 });
+
+    withCrds(kube, ['cnpg', 'mongo']);
+
+    const run = options();
+    const result = await saveKinds(store, CLUSTER, RECORD, APP_INFO, ['mongo', 'cnpg', 'mongo'], run);
+
+    expect(result).toStrictEqual({
+      ok: true, undone: [], record: KINDS_RECORD
+    });
+    expect(bodyOf(store, `POST ${ UPGRADE }`)).toMatchObject({
+      charts: [{
+        version: '0.1.113', values: chartValues(KINDS_RECORD), resetValues: false
+      }]
+    });
+    expect(kube.objects.get(RECORD_PATH)).toMatchObject({ metadata: { resourceVersion: '7' }, data: { 'setup.json': serializeRecord(KINDS_RECORD) } });
+    expect(finished(run)).toStrictEqual(['upgrade done', 'saveRecord done']);
+  });
+
+  it('writes CloudNativePG alone on a chart before 0.1.113, whose schema allows nothing else', async() => {
+    const { store, kube } = installed();
+
+    withCrds(kube, ['cnpg']);
+
+    const result = await saveKinds(store, CLUSTER, RECORD, APP_INFO, ['cnpg'], options());
+
+    expect(result.record?.kinds).toStrictEqual(['cnpg']);
+    expect(bodyOf(store, `POST ${ UPGRADE }`)).toMatchObject({ charts: [{ version: '0.1.111', values: { discovery: { kubernetes: { kinds: ['cnpg'] } } } }] });
+  });
+
+  it('refuses an empty choice and a kind Studio does not discover, before it asks anything', async() => {
+    const { store } = installed({ chart: CHART_113 });
+
+    await expect(saveKinds(store, CLUSTER, RECORD, APP_INFO, [], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'noKinds' }, undone: []
+    });
+    await expect(saveKinds(store, CLUSTER, RECORD, APP_INFO, ['cnpg', 'mysql'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'unknownKind', args: { kind: 'mysql' } }, undone: []
+    });
+    expect(store.calls).toStrictEqual([]);
+  });
+
+  it('refuses anyone who does not own the cluster', async() => {
+    const { store, kube } = installed({ chart: CHART_113, override: [[SSAR_DOWN, reviewAnswer(false)]] });
+
+    withCrds(kube, ['cnpg', 'mongo']);
+    await expect(saveKinds(store, CLUSTER, RECORD, APP_INFO, ['cnpg', 'mongo'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'notOwner' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('refuses the record\'s namespaces when the user cannot see them now, since the upgrade deploys them again', async() => {
+    const record = { ...RECORD, namespaces: ['libredb-studio', 'team-a'] };
+    const { store, kube } = installed({ record, chart: CHART_113 });
+
+    withCrds(kube, ['cnpg']);
+    await expect(saveKinds(store, CLUSTER, record, APP_INFO, ['cnpg'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'badNamespaces' }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('refuses a kind whose CustomResourceDefinition is not on the cluster, which would withdraw every discovered database', async() => {
+    const { store, kube } = installed({ chart: CHART_113 });
+
+    withCrds(kube, ['cnpg']);
+    await expect(saveKinds(store, CLUSTER, RECORD, APP_INFO, ['cnpg', 'pgo'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'crdMissing', args: { crd: CRD.pgo } }, undone: []
+    });
+    expect(changes(store)).toStrictEqual([]);
+  });
+
+  it('refuses a kind other than CloudNativePG on a chart before 0.1.113, the version an upgrade from Settings uses', async() => {
+    const deployed = installed();
+
+    withCrds(deployed.kube, ['cnpg', 'edbpg']);
+    await expect(saveKinds(deployed.store, CLUSTER, RECORD, APP_INFO, ['cnpg', 'edbpg'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'kindsNeedChart', args: { chartVersion: '0.1.111', min: '0.1.113' } }, undone: []
+    });
+    expect(changes(deployed.store)).toStrictEqual([]);
+
+    const unsaid = installed({ chart: { annotations: MANAGED } });
+
+    withCrds(unsaid.kube, ['cnpg', 'edbpg']);
+    await expect(saveKinds(unsaid.store, CLUSTER, RECORD, { revision: 3, managed: true }, ['edbpg'], options())).resolves.toMatchObject({ failure: { reason: 'kindsNeedChart', args: { chartVersion: '0.1.110' } } });
+  });
+
+  it('acts on nothing older than the page showed, nor while Studio\'s namespace is in a project, nor without a host', async() => {
+    const upgraded = installed({ chart: CHART_113 });
+
+    await expect(saveKinds(upgraded.store, CLUSTER, RECORD, { ...APP_INFO, revision: 2 }, ['cnpg'], options())).resolves.toStrictEqual(CHANGED);
+    await expect(saveKinds(installed({ record: SSO_RECORD }).store, CLUSTER, RECORD, APP_INFO, ['cnpg'], options())).resolves.toStrictEqual(CHANGED);
+
+    const moved = installed({ chart: CHART_113 });
+
+    moved.kube.objects.set(NS, {
+      metadata: {
+        name: 'libredb-studio', labels: MANAGED, annotations: { 'field.cattle.io/projectId': 'c-m-1:p-a' }
+      }
+    });
+    await expect(saveKinds(moved.store, CLUSTER, RECORD, APP_INFO, ['cnpg'], options())).resolves.toStrictEqual(IN_PROJECT);
+
+    const hostless = installed({ chart: CHART_113, override: [[`GET ${ INGRESS }`, httpError(404)]] });
+
+    withCrds(hostless.kube, ['cnpg']);
+    await expect(saveKinds(hostless.store, CLUSTER, RECORD, APP_INFO, ['cnpg'], options())).resolves.toStrictEqual({
+      ok: false, failure: { reason: 'noHost' }, undone: []
+    });
+    [upgraded, moved, hostless].forEach(({ store }) => expect(changes(store)).toStrictEqual([]));
+  });
+
+  it('points Studio at Rancher\'s own OIDC issuer, and keeps the record when the upgrade fails', async() => {
+    const record = { ...SSO_RECORD, sso: { ...SSO, issuer: 'https://idp.example.net/oidc' } };
+    const signedIn = installed({ record, chart: CHART_113 });
+
+    withCrds(signedIn.kube, ['cnpg', 'mongo']);
+
+    const result = await saveKinds(signedIn.store, CLUSTER, record, APP_INFO, ['cnpg', 'mongo'], options());
+
+    expect(result.record?.sso).toStrictEqual(SSO);
+
+    const failing = installed({ chart: CHART_113, upgradeStates: ['failed'] });
+
+    withCrds(failing.kube, ['cnpg']);
+    await expect(saveKinds(failing.store, CLUSTER, RECORD, APP_INFO, ['cnpg'], options())).resolves.toStrictEqual({
+      ok: false, failedStep: 'upgrade', failure: { reason: 'helmFailed' }, undone: []
+    });
+    expect(lines(failing.store)).not.toContain(`PUT ${ RECORD_PATH }`);
+  });
+
+  it('says so when Studio took the change but the record was written meanwhile', async() => {
+    const { store, kube } = installed({ chart: CHART_113, override: [[`PUT ${ RECORD_PATH }`, httpError(409, 'conflict')]] });
+
+    withCrds(kube, ['cnpg']);
+    await expect(saveKinds(store, CLUSTER, RECORD, APP_INFO, ['cnpg'], options())).resolves.toMatchObject({
+      ok: false, failedStep: 'saveRecord', failure: { reason: 'request', args: { detail: 'HTTP 409: conflict' } }
+    });
+  });
+});
+
+describe('carrying the discovered kinds forward', () => {
+  const kindsOf = (store: ReturnType<typeof fakeStore>) => (bodyOf(store, `POST ${ UPGRADE }`) as { charts: { values: { discovery: { kubernetes: { kinds?: string[] } } } }[] })
+    .charts[0].values.discovery.kubernetes.kinds;
+
+  it('keeps them when the namespaces change', async() => {
+    const { store, kube } = installed({ record: KINDS_RECORD, chart: CHART_113 });
+
+    withCrds(kube, ['cnpg', 'mongo']);
+
+    const result = await saveNamespaces(store, CLUSTER, KINDS_RECORD, APP_INFO, ['team-b'], options());
+
+    expect(result.record?.kinds).toStrictEqual(['cnpg', 'mongo']);
+    expect(kindsOf(store)).toStrictEqual(['cnpg', 'mongo']);
+  });
+
+  it('keeps them when single sign-on is turned on or off', async() => {
+    const on = installed({ record: KINDS_RECORD, chart: CHART_113 });
+
+    withCrds(on.kube, ['cnpg', 'mongo']);
+
+    const enabled = await enableSso(on.store, CLUSTER, KINDS_RECORD, APP_INFO, CONTEXT, CONFIRMED, options());
+
+    expect(enabled.record?.kinds).toStrictEqual(['cnpg', 'mongo']);
+    expect(kindsOf(on.store)).toStrictEqual(['cnpg', 'mongo']);
+
+    const record = { ...KINDS_RECORD, sso: SSO };
+    const off = installed({ record, chart: CHART_113 });
+
+    withCrds(off.kube, ['cnpg', 'mongo']);
+
+    const disabled = await disableSso(off.store, CLUSTER, record, APP_INFO, { name: SSO.client, namespaces: ['team-a'] }, options());
+
+    expect(disabled.record).toStrictEqual(KINDS_RECORD);
+    expect(kindsOf(off.store)).toStrictEqual(['cnpg', 'mongo']);
+  });
+
+  it('leaves them in the record when the client secret is rotated, which changes no value', async() => {
+    const record = { ...KINDS_RECORD, sso: SSO };
+    const { store, kube } = installed({ record, chart: CHART_113 });
+
+    await expect(rotateClientSecret(store, CLUSTER, record, APP_INFO, SSO.client, options())).resolves.toStrictEqual({ ok: true, undone: [] });
+    expect(kube.objects.get(RECORD_PATH)).toMatchObject({ data: { 'setup.json': serializeRecord(record) } });
+  });
+
+  // Checked before any step, so turning single sign-on on creates no OIDC client that an undo could not take back
+  it('changes nothing on a chart before 0.1.113 with kinds it refuses, and says why instead of a failed render', async() => {
+    const record = { ...KINDS_RECORD, sso: SSO };
+    const refusal = {
+      ok: false, failure: { reason: 'kindsNeedChart', args: { chartVersion: '0.1.111', min: '0.1.113' } }, undone: []
+    };
+    const stores = [installed({ record: KINDS_RECORD }), installed({ record: KINDS_RECORD }), installed({ record })];
+
+    stores.forEach(({ kube }) => withCrds(kube, ['cnpg', 'mongo']));
+    await expect(saveNamespaces(stores[0].store, CLUSTER, KINDS_RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(refusal);
+    await expect(enableSso(stores[1].store, CLUSTER, KINDS_RECORD, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(refusal);
+    await expect(disableSso(stores[2].store, CLUSTER, record, APP_INFO, { name: SSO.client, namespaces: ['team-a'] }, options())).resolves.toStrictEqual(refusal);
+    stores.forEach(({ store }) => expect(changes(store)).toStrictEqual([]));
+  });
+
+  it('changes nothing while a kind\'s CustomResourceDefinition is gone from the cluster, which would withdraw every discovered database', async() => {
+    const record = { ...KINDS_RECORD, sso: SSO };
+    const refusal = {
+      ok: false, failure: { reason: 'crdMissing', args: { crd: CRD.mongo } }, undone: []
+    };
+    const stores = [installed({ record: KINDS_RECORD, chart: CHART_113 }), installed({ record: KINDS_RECORD, chart: CHART_113 }), installed({ record, chart: CHART_113 })];
+
+    stores.forEach(({ kube }) => withCrds(kube, ['cnpg']));
+    await expect(saveNamespaces(stores[0].store, CLUSTER, KINDS_RECORD, APP_INFO, ['team-b'], options())).resolves.toStrictEqual(refusal);
+    await expect(enableSso(stores[1].store, CLUSTER, KINDS_RECORD, APP_INFO, CONTEXT, CONFIRMED, options())).resolves.toStrictEqual(refusal);
+    await expect(disableSso(stores[2].store, CLUSTER, record, APP_INFO, { name: SSO.client, namespaces: ['team-a'] }, options())).resolves.toStrictEqual(refusal);
+    stores.forEach(({ store }) => expect(changes(store)).toStrictEqual([]));
   });
 });
 

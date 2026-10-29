@@ -13,20 +13,22 @@ import { failureOf } from '../services/setup/failure';
 import { namespacesError } from '../services/setup/form';
 import { RECORD_CONFIGMAP, STUDIO_NAMESPACE } from '../services/setup/names';
 import {
-  disableSso, enableSso, loadSettings, rotateClientSecret, rotationFailure, saveNamespaces, uninstallStudio
+  disableSso, enableSso, loadSettings, rotateClientSecret, rotationFailure, saveKinds, saveNamespaces, uninstallStudio
 } from '../services/setup/settings';
 import type { UndoEvent } from '../services/setup/cleanup';
 import type { StepView } from '../services/setup/install';
 import type {
-  AppInfo, ChangeOptions, ChangeResult, ChangeStepId, StudioSettings
+  AppInfo, ChangeOptions, ChangeResult, ChangeStepId, KindState, StudioSettings
 } from '../services/setup/settings';
+import { DEFAULT_KINDS } from '../services/setup/values';
 import type { SetupRecord } from '../services/setup/values';
+import { MIN_KINDS_CHART_VERSION } from '../services/setup/versions';
 import type { StoreLike } from '../services/types';
 
-type ChangeKind = 'namespaces' | 'sso' | 'rotate' | 'ssoOff' | 'uninstall';
+type ChangeKind = 'namespaces' | 'kinds' | 'sso' | 'rotate' | 'ssoOff' | 'uninstall';
 
 /**
- * F7, Studio's settings: its state and the aggregation warning, the namespaces it discovers, single
+ * F7, Studio's settings: its state and the aggregation warning, the namespaces and kinds it discovers, single
  * sign-on (turned on for a Studio installed with its own sign-in; once on, its client secret rotated
  * or single sign-on turned off again by a Rancher administrator, each after the OIDC client's name is
  * typed by hand), and uninstall after the release name is typed by hand. Each change is shown step
@@ -43,6 +45,7 @@ export default defineComponent({
     return {
       settings:      undefined as StudioSettings | undefined,
       namespaces:    [] as string[],
+      kinds:         [] as string[],
       confirm:       '',
       confirmingSso: false,
       ownersTrusted: false,
@@ -55,6 +58,7 @@ export default defineComponent({
       result:        undefined as ChangeResult | undefined,
       namespace:     STUDIO_NAMESPACE,
       recordName:    RECORD_CONFIGMAP,
+      minKindsChart: MIN_KINDS_CHART_VERSION,
     };
   },
 
@@ -74,6 +78,15 @@ export default defineComponent({
 
     namespacesChanged(): boolean {
       return this.namespaces.slice().sort().join(',') !== (this.record?.namespaces || []).join(',');
+    },
+
+    /** The kinds the record discovers, CloudNativePG alone when it names none */
+    recordKinds(): string[] {
+      return (this.record?.kinds || DEFAULT_KINDS).slice().sort();
+    },
+
+    kindsChanged(): boolean {
+      return this.kinds.slice().sort().join(',') !== this.recordKinds.join(',');
     },
 
     redirectUri(): string | undefined {
@@ -131,6 +144,7 @@ export default defineComponent({
       return loadSettings(this.$store as StoreLike, this.cluster).then((settings) => {
         this.settings = settings;
         this.namespaces = settings.record ? settings.record.namespaces.slice() : [];
+        this.kinds = (settings.record?.kinds || DEFAULT_KINDS).slice();
         this.confirmingSso = false;
         this.ownersTrusted = false;
       });
@@ -174,6 +188,35 @@ export default defineComponent({
       const options = this.start('namespaces', ['upgrade', 'saveRecord']);
 
       return saveNamespaces(this.$store as StoreLike, this.cluster, this.record as SetupRecord, this.settings?.app as AppInfo, this.namespaces, options)
+        .then(this.finish, this.broke);
+    },
+
+    /** Why a kind can or cannot be chosen, as a key under libredbStudio.settings.kindState */
+    kindState(kind: KindState): string {
+      if (kind.installed === undefined) {
+        return 'unknown';
+      }
+
+      if (!kind.installed) {
+        return 'noCrd';
+      }
+
+      return kind.chartTakes ? 'ready' : 'needsChart';
+    },
+
+    /** A kind can always be dropped, and chosen only when the cluster and the chart take it */
+    kindDisabled(kind: KindState): boolean {
+      return this.busy || (!this.kinds.includes(kind.id) && this.kindState(kind) !== 'ready');
+    },
+
+    toggleKind(id: string, on: boolean): void {
+      this.kinds = this.kinds.filter((kind) => kind !== id).concat(on ? [id] : []);
+    },
+
+    saveChosenKinds(): Promise<void> {
+      const options = this.start('kinds', ['upgrade', 'saveRecord']);
+
+      return saveKinds(this.$store as StoreLike, this.cluster, this.record as SetupRecord, this.settings?.app as AppInfo, this.kinds, options)
         .then(this.finish, this.broke);
     },
 
@@ -360,6 +403,63 @@ export default defineComponent({
             :disabled="busy || !namespacesChanged || !!namespacesError"
             data-testid="libredb-settings-save"
             @click="save"
+          >
+            {{ t('libredbStudio.settings.save', {}, true) }}
+          </button>
+        </section>
+        <section
+          v-if="settings.app && settings.kinds"
+          class="mb-20"
+          data-testid="libredb-settings-kinds"
+        >
+          <h3>{{ t('libredbStudio.settings.kindsTitle', {}, true) }}</h3>
+          <p class="mb-10">
+            {{ t('libredbStudio.settings.kindsIntro', {}, true) }}
+          </p>
+          <p class="mb-10">
+            {{ t('libredbStudio.settings.kindsRancherNote', {}, true) }}
+          </p>
+          <div
+            v-for="option in settings.kinds"
+            :key="option.id"
+            class="mb-10"
+          >
+            <Checkbox
+              :value="kinds.includes(option.id)"
+              :label="t(`libredbStudio.settings.kindNames.${ option.id }`, {}, true)"
+              :disabled="kindDisabled(option)"
+              :data-testid="`libredb-settings-kind-${ option.id }`"
+              :aria-describedby="`libredb-settings-kind-${ option.id }-state`"
+              @update:value="toggleKind(option.id, $event)"
+            />
+            <p
+              :id="`libredb-settings-kind-${ option.id }-state`"
+              class="text-muted"
+              :data-testid="`libredb-settings-kind-${ option.id }-state`"
+            >
+              {{ t(`libredbStudio.settings.kindState.${ kindState(option) }`, { crd: option.crd, min: minKindsChart }, true) }}
+            </p>
+          </div>
+          <p
+            v-if="kinds.includes('mongo')"
+            class="mb-10"
+            data-testid="libredb-settings-kinds-mongo"
+          >
+            {{ t('libredbStudio.settings.kindsMongoNote', {}, true) }}
+          </p>
+          <p
+            v-if="!kinds.length"
+            class="text-error"
+            data-testid="libredb-settings-kinds-error"
+          >
+            {{ t('libredbStudio.setup.failure.noKinds', {}, true) }}
+          </p>
+          <button
+            type="button"
+            class="btn role-primary"
+            :disabled="busy || !kindsChanged || !kinds.length"
+            data-testid="libredb-settings-kinds-save"
+            @click="saveChosenKinds"
           >
             {{ t('libredbStudio.settings.save', {}, true) }}
           </button>

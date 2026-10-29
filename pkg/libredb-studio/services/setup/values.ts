@@ -3,6 +3,23 @@ import { CERT_MANAGER_TLS_SECRET, OIDC_SECRET, RANCHER_CA_CONFIGMAP, RANCHER_CA_
 /** Where the ingress certificate comes from */
 export type TlsChoice = { source: 'secret', secretName: string } | { source: 'cert-manager', clusterIssuer: string };
 
+/** A kind of database Studio's discovery lists, as the chart's discovery.kubernetes.kinds names it */
+export type DiscoveryKind = 'cnpg' | 'edbpg' | 'pgo' | 'mongo';
+
+/**
+ * Every discovery kind, in the chart's order, with the CustomResourceDefinition it needs on the
+ * cluster: while one chosen is missing, discovery withdraws every namespace, whatever its kinds
+ */
+export const DISCOVERY_KINDS: { id: DiscoveryKind, crd: string }[] = [
+  { id: 'cnpg', crd: 'clusters.postgresql.cnpg.io' },
+  { id: 'edbpg', crd: 'clusters.postgresql.k8s.enterprisedb.io' },
+  { id: 'pgo', crd: 'postgresclusters.postgres-operator.crunchydata.com' },
+  { id: 'mongo', crd: 'mongodbcommunity.mongodbcommunity.mongodb.com' },
+];
+
+/** What the chart discovers when no kinds are written */
+export const DEFAULT_KINDS: DiscoveryKind[] = ['cnpg'];
+
 /** Single sign-on through Rancher's OIDC provider, as the wizard registered it */
 export interface SsoRecord {
   /** The OIDCClient on Rancher's local cluster */
@@ -26,8 +43,10 @@ export interface SetupRecord {
   host: string;
   ingressClassName: string;
   tls: TlsChoice;
-  /** The namespaces whose CloudNativePG databases Studio discovers */
+  /** The namespaces whose databases Studio discovers */
   namespaces: string[];
+  /** The kinds Settings chose; absent, as after the wizard: CloudNativePG alone, and no kinds value written */
+  kinds?: DiscoveryKind[];
   /** Absent: Studio's own sign-in */
   sso?: SsoRecord;
   /** Whether the wizard created Studio's namespace, which decides whether uninstall removes it */
@@ -79,9 +98,13 @@ export function chartValues(record: SetupRecord): Record<string, unknown> {
     mcp:             { enabled: false },
     persistence:     { enabled: true },
     seedConnections: { cacheTTL: SEED_CACHE_TTL_MS },
-    discovery:       { kubernetes: { enabled: true, namespaces: [...record.namespaces] } },
-    rancher:         { navLink: { enabled: true } },
-    ingress:         ingressValues(record),
+    discovery:       {
+      kubernetes: {
+        enabled: true, namespaces: [...record.namespaces], ...(record.kinds ? { kinds: [...record.kinds] } : {})
+      }
+    },
+    rancher: { navLink: { enabled: true } },
+    ingress: ingressValues(record),
   };
 
   if (!record.sso) {
@@ -135,6 +158,12 @@ function validSso(sso: unknown): boolean {
   return sso === undefined || (isObject(sso) && isText(sso.client) && isText(sso.issuer) && isText(sso.scope) && typeof sso.rancherCA === 'boolean');
 }
 
+/** Absent, or at least one known kind, each once */
+function validKinds(kinds: unknown): boolean {
+  return kinds === undefined || (Array.isArray(kinds) && kinds.length > 0 && new Set(kinds).size === kinds.length &&
+    kinds.every((kind) => DISCOVERY_KINDS.some(({ id }) => id === kind)));
+}
+
 function validRelease(release: unknown): boolean {
   return isObject(release) && ['namespace', 'name', 'repo', 'chart', 'chartVersion'].every((key) => isText(release[key]));
 }
@@ -152,7 +181,7 @@ export function parseRecord(text: string | undefined): SetupRecord | undefined {
   const valid = isObject(record) && record.version === 1 && isText(record.cluster) && validRelease(record.release) &&
     isText(record.host) && isText(record.ingressClassName) && validTls(record.tls) &&
     Array.isArray(record.namespaces) && record.namespaces.every(isText) && validSso(record.sso) &&
-    typeof record.createdNamespace === 'boolean';
+    typeof record.createdNamespace === 'boolean' && validKinds(record.kinds);
 
   return valid ? record as unknown as SetupRecord : undefined;
 }

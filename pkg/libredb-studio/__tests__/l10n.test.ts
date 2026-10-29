@@ -79,13 +79,15 @@ describe('translations', () => {
         'request', 'inProject', 'noClientId', 'noClientSecret', 'noRancherCA', 'helmFailed', 'operationFailed', 'timeout', 'notReady', 'releaseLeft', 'notEmpty',
         'notManaged', 'notOurs', 'notAllowed', 'retryLater', 'upgradeLeft', 'untrustedRecord', 'noHost', 'hostChanged', 'ssoUnavailable', 'notConfirmed', 'badNamespaces',
         'changedSinceLoad', 'mayBeLeft', 'notAcknowledged', 'notRegenerated', 'notRestarted', 'clientMissing', 'clientNotManaged', 'objectNotManaged', 'ssoNeedsAdmin',
-        'ssoNotOn', 'notConfirmedClient', 'secretKeyMissing', 'regenerateUnknown', 'unmanagedLeft',
+        'ssoNotOn', 'notConfirmedClient', 'secretKeyMissing', 'regenerateUnknown', 'unmanagedLeft', 'notOwner', 'noKinds', 'unknownKind', 'crdMissing', 'kindsNeedChart',
       ]),
       ...['label', 'title', 'notOwner', 'notSetUp', 'otherInstall', 'recordUnreadable', 'host', 'unknownHost', 'chart', 'chartValue', 'noApp', 'signIn', 'ssoOn', 'ssoOff',
         'save', 'ssoTitle', 'ssoIntro', 'enableSso', 'redirectConfirm', 'ssoNamespaces', 'ssoOnIntro', 'ssoAdminOnly', 'rotateTitle', 'rotateIntro', 'rotate', 'rotateWarning',
         'turnOffTitle', 'turnOffWarning', 'turnOff', 'confirm', 'cancel', 'uninstallTitle', 'uninstallWarning', 'typeName', 'uninstall', 'uninstalledTitle', 'refused',
         'done.namespaces', 'done.sso', 'done.rotate', 'done.ssoOff', 'done.uninstall', 'failed.namespaces', 'failed.sso', 'failed.rotate', 'failed.rotateUnchanged',
-        'failed.rotateRestart', 'failed.ssoOff', 'failed.uninstall'].map((key) => `libredbStudio.settings.${ key }`),
+        'failed.rotateRestart', 'failed.ssoOff', 'failed.uninstall', 'kindsTitle', 'kindsIntro', 'kindsRancherNote', 'kindsMongoNote', 'kindNames.cnpg', 'kindNames.edbpg',
+        'kindNames.pgo', 'kindNames.mongo', 'kindState.ready', 'kindState.noCrd', 'kindState.unknown', 'kindState.needsChart', 'done.kinds', 'failed.kinds',
+      ].map((key) => `libredbStudio.settings.${ key }`),
     ];
 
     expect(keys.filter((key) => typeof lookup(key) !== 'string')).toStrictEqual([]);

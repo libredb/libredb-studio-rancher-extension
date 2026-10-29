@@ -1,8 +1,8 @@
 import {
-  compareVersions, parseVersion, rancherLine, oidcScopes, pickChartVersion, MIN_CHART_VERSION, MIN_APP_VERSION
+  chartTakesAllKinds, compareVersions, parseVersion, rancherLine, oidcScopes, pickChartVersion, MIN_CHART_VERSION, MIN_APP_VERSION, MIN_KINDS_CHART_VERSION
 } from '../services/setup/versions';
 import {
-  chartValues, oidcIssuer, parseRecord, sameRecord, serializeRecord, SetupRecord
+  chartValues, oidcIssuer, parseRecord, sameRecord, serializeRecord, SetupRecord, DISCOVERY_KINDS
 } from '../services/setup/values';
 import {
   STUDIO_NAMESPACE, RELEASE_NAME, CHART_NAME, OIDC_SECRET, RANCHER_CA_CONFIGMAP, RECORD_CONFIGMAP, CHART_REPO, chartRepo, oidcClientName
@@ -66,6 +66,16 @@ describe('versions', () => {
   it('needs a chart with Rancher mode and an application after 1.1.0', () => {
     expect(MIN_CHART_VERSION).toBe('0.1.107');
     expect(MIN_APP_VERSION).toBe('1.1.1');
+  });
+
+  it('takes discovery kinds other than CloudNativePG only from chart 0.1.113, whose schema allows them', () => {
+    expect(MIN_KINDS_CHART_VERSION).toBe('0.1.113');
+    expect(chartTakesAllKinds('0.1.113')).toBe(true);
+    expect(chartTakesAllKinds('0.2.0')).toBe(true);
+    expect(chartTakesAllKinds('0.1.112')).toBe(false);
+    expect(chartTakesAllKinds('0.1.113-rc.1')).toBe(false);
+    expect(chartTakesAllKinds('not-a-version')).toBe(false);
+    expect(chartTakesAllKinds(undefined)).toBe(false);
   });
 
   it('picks the newest chart version with Rancher mode, and names the newest one either way', () => {
@@ -213,6 +223,30 @@ describe('chart values', () => {
     expect(ingress.tls).toStrictEqual([{ secretName: 'libredb-studio-tls', hosts: ['studio.example.com'] }]);
   });
 
+  it('names the CustomResourceDefinition each discovery kind needs, as Studio\'s chart lists the kinds', () => {
+    expect(DISCOVERY_KINDS).toStrictEqual([
+      { id: 'cnpg', crd: 'clusters.postgresql.cnpg.io' },
+      { id: 'edbpg', crd: 'clusters.postgresql.k8s.enterprisedb.io' },
+      { id: 'pgo', crd: 'postgresclusters.postgres-operator.crunchydata.com' },
+      { id: 'mongo', crd: 'mongodbcommunity.mongodbcommunity.mongodb.com' },
+    ]);
+  });
+
+  it('writes no kinds for a record without them, so the chart discovers CloudNativePG alone as before', () => {
+    expect((chartValues(base) as { discovery: { kubernetes: Record<string, unknown> } }).discovery.kubernetes).not.toHaveProperty('kinds');
+  });
+
+  it('writes the kinds a record names, a copy of them, and CloudNativePG alone as charts before 0.1.113 accept it', () => {
+    const record: SetupRecord = { ...base, kinds: ['cnpg', 'mongo'] };
+    const values = chartValues(record) as { discovery: { kubernetes: Record<string, unknown> } };
+
+    record.kinds?.push('pgo');
+    expect(values.discovery.kubernetes).toStrictEqual({
+      enabled: true, namespaces: ['team-a', 'team-b'], kinds: ['cnpg', 'mongo']
+    });
+    expect((chartValues({ ...base, kinds: ['cnpg'] }) as { discovery: { kubernetes: Record<string, unknown> } }).discovery.kubernetes.kinds).toStrictEqual(['cnpg']);
+  });
+
   it('copies the namespace list, so a later change to the record does not reach built values', () => {
     const record = { ...base, namespaces: ['team-a'] };
     const values = chartValues(record) as { discovery: { kubernetes: { namespaces: string[] } } };
@@ -245,6 +279,7 @@ describe('setup record', () => {
     delete local.sso;
     expect(parseRecord(serializeRecord(record))).toStrictEqual(record);
     expect(parseRecord(serializeRecord(local))).toStrictEqual(local);
+    expect(parseRecord(serializeRecord({ ...record, kinds: ['cnpg', 'edbpg', 'pgo', 'mongo'] }))).toStrictEqual({ ...record, kinds: ['cnpg', 'edbpg', 'pgo', 'mongo'] });
   });
 
   it('tells a record that says the same from one that says something else, whatever the order of its keys', () => {
@@ -256,6 +291,7 @@ describe('setup record', () => {
     expect(sameRecord(record, { ...record, namespaces: [] })).toBe(false);
     expect(sameRecord({ ...record, sso: undefined }, { ...record, sso: undefined })).toBe(true);
     expect(sameRecord({ ...record, sso: undefined }, record)).toBe(false);
+    expect(sameRecord(record, { ...record, kinds: ['cnpg'] })).toBe(false);
   });
 
   it('refuses a record it cannot trust to rebuild the values from', () => {
@@ -278,5 +314,9 @@ describe('setup record', () => {
     expect(parseRecord(variant({ sso: { ...record.sso, rancherCA: 'yes' } }))).toBeUndefined();
     expect(parseRecord(variant({ sso: { ...record.sso, client: '' } }))).toBeUndefined();
     expect(parseRecord(variant({ createdNamespace: 'no' }))).toBeUndefined();
+    expect(parseRecord(variant({ kinds: 'cnpg' }))).toBeUndefined();
+    expect(parseRecord(variant({ kinds: [] }))).toBeUndefined();
+    expect(parseRecord(variant({ kinds: ['cnpg', 'mysql'] }))).toBeUndefined();
+    expect(parseRecord(variant({ kinds: ['cnpg', 'mongo', 'cnpg'] }))).toBeUndefined();
   });
 });
