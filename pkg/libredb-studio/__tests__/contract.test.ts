@@ -54,8 +54,8 @@ describe('connection summary', () => {
 });
 
 describe('connection id', () => {
-  it('is k8s-<slug>-<first 12 hex of sha256("<namespace>/<name>")>', () => {
-    const expected = createHash('sha256').update('ns-1/db-1').digest('hex').slice(0, 12);
+  it('is k8s-<slug>-<first 32 hex of sha256("<namespace>/<name>")>', () => {
+    const expected = createHash('sha256').update('ns-1/db-1').digest('hex').slice(0, 32);
 
     expect(connectionId('cnpg', 'ns-1', 'db-1')).toBe(`k8s-cnpg-${ expected }`);
   });
@@ -74,8 +74,8 @@ describe('connection id', () => {
 
 describe('studio link', () => {
   it('appends ?connection=seed%3A<id> to the link, without a doubled slash', () => {
-    expect(studioLink('https://studio.example.com', 'k8s-cnpg-0123456789ab')).toBe('https://studio.example.com/?connection=seed%3Ak8s-cnpg-0123456789ab');
-    expect(studioLink('https://studio.example.com//', 'k8s-cnpg-0123456789ab')).toBe('https://studio.example.com/?connection=seed%3Ak8s-cnpg-0123456789ab');
+    expect(studioLink('https://studio.example.com', 'k8s-cnpg-0123456789abcdef0123456789abcdef')).toBe('https://studio.example.com/?connection=seed%3Ak8s-cnpg-0123456789abcdef0123456789abcdef');
+    expect(studioLink('https://studio.example.com//', 'k8s-cnpg-0123456789abcdef0123456789abcdef')).toBe('https://studio.example.com/?connection=seed%3Ak8s-cnpg-0123456789abcdef0123456789abcdef');
   });
 });
 
@@ -86,8 +86,15 @@ describe('database link', () => {
   });
 });
 
+// Studio's fixture also holds the kinds this extension does not support yet; it checks the CloudNativePG cases
+const cnpgCases = golden.cases.filter((c) => c.resource.apiVersion === 'postgresql.cnpg.io/v1' && c.resource.kind === 'Cluster');
+
 describe('golden fixture', () => {
-  it.each(golden.cases.map((c) => [`${ c.resource.metadata.namespace }/${ c.resource.metadata.name }`, c]))('%s maps to its Secret, id and link', (_, c) => {
+  it('holds the CloudNativePG cases', () => {
+    expect(cnpgCases.map((c) => `${ c.resource.metadata.namespace }/${ c.resource.metadata.name }`)).toStrictEqual(['team-a/orders', 'team-b/analytics', 'prod/billing-db']);
+  });
+
+  it.each(cnpgCases.map((c) => [`${ c.resource.metadata.namespace }/${ c.resource.metadata.name }`, c]))('%s maps to its Secret, id and link', (_, c) => {
     const kind = CNPG_CLUSTER_KIND;
     const { namespace, name } = c.resource.metadata;
     const id = connectionId(kind.slug, namespace, name);
@@ -99,18 +106,21 @@ describe('golden fixture', () => {
   });
 
   // The user is left out: for a Secret the user supplied, Studio takes it from the Secret, which the
-  // extension never reads, so the panel can only show the owner the resource names.
-  it.each(golden.cases.map((c) => [`${ c.resource.metadata.namespace }/${ c.resource.metadata.name }`, c]))('%s shows the host, port and database Studio connects to', (_, c) => {
-    expect(CNPG_CLUSTER_KIND.connectionSummary(c.resource)).toMatchObject({
-      host: c.connection.host, port: c.connection.port, database: c.connection.database
-    });
+  // extension never reads, so the panel can only show the owner the resource names. Studio connects to the
+  // fully qualified name under its configured cluster domain, which the extension does not know, so the
+  // panel shows the same Service name up to .svc.
+  it.each(cnpgCases.map((c) => [`${ c.resource.metadata.namespace }/${ c.resource.metadata.name }`, c]))('%s shows the host, port and database Studio connects to', (_, c) => {
+    const summary = CNPG_CLUSTER_KIND.connectionSummary(c.resource);
+
+    expect(c.connection.host.startsWith(`${ summary.host }.`)).toBe(true);
+    expect(summary).toMatchObject({ port: c.connection.port, database: c.connection.database });
   });
 
   it('is Studio\'s own fixture, copied from the released tag its source file names', () => {
     expect(golden.provenance).toBe('libredb-studio');
     expect(goldenSource).toStrictEqual({
       repository: 'libredb/libredb-studio',
-      tag:        'libredb-studio-0.1.107',
+      tag:        'libredb-studio-0.1.113',
       path:       'tests/fixtures/kubernetes-discovery-golden.json',
     });
   });
