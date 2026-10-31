@@ -1,0 +1,29 @@
+{
+  "name": "libredb-studio",
+  "description": "Open the databases of a Rancher cluster in LibreDB Studio",
+  "version": "0.1.0",
+  "homepage": "https://github.com/libredb/libredb-studio-rancher-extension",
+  "icon": "https://raw.githubusercontent.com/libredb/libredb-studio-rancher-extension/main/pkg/libredb-studio/assets/icon.svg",
+  "keywords": [
+    "libredb",
+    "database",
+    "sql",
+    "postgresql",
+    "cloudnativepg"
+  ],
+  "private": false,
+  "rancher": true,
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "5.0.9",
+    "@vue/cli-service": "5.0.8",
+    "@vue/cli-plugin-typescript": "5.0.9"
+  },
+  "license": "MIT",
+  "files": [
+    "**/*"
+  ],
+  "main": "libredb-studio-0.1.0.umd.min.js"
+}

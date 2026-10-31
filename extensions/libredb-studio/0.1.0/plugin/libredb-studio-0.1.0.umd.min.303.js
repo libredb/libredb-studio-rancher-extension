@@ -1,0 +1,2 @@
+"use strict";(("undefined"!==typeof self?self:this)["webpackChunklibredb_studio_0_1_0"]=("undefined"!==typeof self?self:this)["webpackChunklibredb_studio_0_1_0"]||[]).push([[303],{66303:function(e,n,t){t.r(n),t.d(n,{default:function(){return d}});var o=t(9274);function r(e,n,t,r,s,u){const c=(0,o.resolveComponent)("ResourceDetail");return(0,o.openBlock)(),(0,o.createBlock)(c)}var s=t(72406),u={name:"ClusterResourcedId",components:{ResourceDetail:s.A}},c=t(47433);const i=(0,c.A)(u,[["render",r]]);var d=i}}]);
+//# sourceMappingURL=libredb-studio-0.1.0.umd.min.303.js.map

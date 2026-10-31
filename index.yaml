@@ -1,0 +1,33 @@
+apiVersion: v1
+entries:
+  libredb-studio:
+  - annotations:
+      catalog.cattle.io/certified: rancher
+      catalog.cattle.io/display-name: LibreDB Studio
+      catalog.cattle.io/kube-version: '>= 1.26.0-0'
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.15.0-0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-10-31T01:00:06.540560772Z"
+    description: Open the databases of a Rancher cluster in LibreDB Studio
+    digest: d41024372a2a7aadb1ae0cc542bc5a1d8c001b5995ca6a7d78c39820950fdd1e
+    home: https://github.com/libredb/libredb-studio-rancher-extension
+    icon: https://raw.githubusercontent.com/libredb/libredb-studio-rancher-extension/main/pkg/libredb-studio/assets/icon.svg
+    keywords:
+    - libredb
+    - database
+    - sql
+    - postgresql
+    - cloudnativepg
+    name: libredb-studio
+    type: application
+    urls:
+    - assets/libredb-studio/libredb-studio-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-10-31T01:00:06.539151072Z"
