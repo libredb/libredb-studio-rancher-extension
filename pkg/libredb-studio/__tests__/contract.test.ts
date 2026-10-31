@@ -120,7 +120,7 @@ describe('golden fixture', () => {
     expect(golden.provenance).toBe('libredb-studio');
     expect(goldenSource).toStrictEqual({
       repository: 'libredb/libredb-studio',
-      tag:        'libredb-studio-0.1.113',
+      tag:        '1.2.0',
       path:       'tests/fixtures/kubernetes-discovery-golden.json',
     });
   });
