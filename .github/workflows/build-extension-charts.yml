@@ -36,7 +36,7 @@ jobs:
   build-extension-charts:
     needs: golden-fixture-released
     if: startsWith(github.ref_name, 'libredb-studio-') && !startsWith(github.ref_name, 'libredb-studio-rancher-extension-')
-    uses: rancher/dashboard/.github/workflows/build-extension-charts.yml@8ded74ce753910cb3c12bbb72a6c02c5ca0ab68c # master 2026-10-27
+    uses: rancher/dashboard/.github/workflows/build-extension-charts.yml@55438bb38dfc2b8228c56387b0ade4f2eb058c05 # master 2026-10-27
     permissions:
       contents: write
       pull-requests: write
